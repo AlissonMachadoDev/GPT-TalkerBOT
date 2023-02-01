@@ -10,6 +10,7 @@ defmodule GptTalkerbot.Telegram.Message do
   defmodule From do
     use Ecto.Schema
 
+    @derive Jason.Encoder
     embedded_schema do
       field :username, :string
       field :first_name, :string
@@ -18,6 +19,21 @@ defmodule GptTalkerbot.Telegram.Message do
     end
   end
 
+  defmodule ReplyToMessage do
+    use Ecto.Schema
+
+    @derive Jason.Encoder
+    embedded_schema do
+      field :chat_id, :string
+      field :chat_type, :string
+      field :chat_first_name, :string
+      field :message_id, :string
+      field :text, :string
+      embeds_one :from, From
+    end
+  end
+
+  @derive Jason.Encoder
   embedded_schema do
     field :message_id, :string
     field :chat_id, :string
@@ -26,14 +42,7 @@ defmodule GptTalkerbot.Telegram.Message do
 
     embeds_one :from, From
 
-    embeds_one :reply_to_message, ReplyToMessage do
-      field :chat_id, :string
-      field :chat_type, :string
-      field :chat_first_name, :string
-      field :message_id, :string
-      field :text, :string
-      embeds_one :from, From
-    end
+    embeds_one :reply_to_message, ReplyToMessage
   end
 
   def cast(params) do

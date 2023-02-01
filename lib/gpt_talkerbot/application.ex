@@ -5,6 +5,8 @@ defmodule GptTalkerbot.Application do
 
   use Application
 
+  alias GptTalkerbot.RMQPublisher
+
   @impl true
   def start(_type, _args) do
     children = [
@@ -15,9 +17,17 @@ defmodule GptTalkerbot.Application do
       # Start the PubSub system
       {Phoenix.PubSub, name: GptTalkerbot.PubSub},
       # Start the Endpoint (http/https)
-      GptTalkerbotWeb.Endpoint
+      GptTalkerbotWeb.Endpoint,
       # Start a worker by calling: GptTalkerbot.Worker.start_link(arg)
       # {GptTalkerbot.Worker, arg}
+      %{
+        id: RMQPublisher,
+        start: {
+          RMQPublisher,
+          :start_link,
+          []
+        }
+      },
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

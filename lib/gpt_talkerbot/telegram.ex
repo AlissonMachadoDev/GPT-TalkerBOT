@@ -2,7 +2,7 @@ defmodule GptTalkerbot.Telegram do
   require Logger
 
   alias GptTalkerbot.Telegram.{Message}
-  alias GptTalkerbot.Events
+  alias GptTalkerbot.RMQPublisher
 
   def build_message(params) do
     params
@@ -22,7 +22,7 @@ defmodule GptTalkerbot.Telegram do
     Publishes it as an event in the pubsub
   """
   def enqueue_processing!(%Message{} = m) do
-    IO.inspect(m)
+    RMQPublisher.publish_message(m)
     # Logic to publish at RabbitMQ
 
   end
