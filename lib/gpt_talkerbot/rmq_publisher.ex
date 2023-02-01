@@ -16,8 +16,8 @@ defmodule GptTalkerbot.RMQPublisher do
   end
 
   def publish_message(message) do
-    message = Jason.encode!(%{message: message})
-    GenRMQ.Publisher.publish(RMQPublisher, message, @messages_queue)
+    message_json = Jason.encode!(%{message: message})
+    GenRMQ.Publisher.publish(RMQPublisher, message_json, @messages_queue)
   end
 
   def init do

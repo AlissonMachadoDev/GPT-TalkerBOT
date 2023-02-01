@@ -16,6 +16,18 @@ defmodule GptTalkerbot.Telegram do
     end
   end
 
+  def rebuild_message(params) do
+    params
+    |> Message.recast()
+    |> case do
+      %Ecto.Changeset{valid?: true} = changeset ->
+        {:ok, Ecto.Changeset.apply_changes(changeset)}
+
+      changeset ->
+        {:error, changeset}
+    end
+  end
+
   @doc """
     Enqueues processing for a message
 

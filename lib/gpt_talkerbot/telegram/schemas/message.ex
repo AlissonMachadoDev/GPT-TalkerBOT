@@ -102,4 +102,63 @@ defmodule GptTalkerbot.Telegram.Message do
       Changeset.get_change(changeset, :telegram_id, params["id"] |> Integer.to_string())
     )
   end
+
+  # Rebuild functions ________________________________________________________
+
+  def recast(params) do
+    %__MODULE__{}
+    |> Changeset.cast(params, [:text, :chat_id, :chat_type])
+    |> Changeset.validate_required([:text])
+    |> re_put_chat_id()
+    |> re_put_chat_type()
+    |> re_put_message_id()
+    |> Changeset.cast_embed(:from, with: &re_from_changeset/2)
+    |> Changeset.cast_embed(:reply_to_message, with: &re_reply_to_message_changeset/2)
+  end
+
+  defp re_reply_to_message_changeset(schema, params) do
+    schema
+    |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name])
+    |> re_put_chat_id()
+    |> re_put_chat_type()
+    |> Changeset.cast_embed(:from, with: &re_from_changeset/2)
+  end
+
+  defp re_from_changeset(schema, params) do
+    schema
+    |> Changeset.cast(params, [:first_name, :language_code, :telegram_id, :username])
+    |> re_put_telegram_id()
+  end
+
+  defp re_put_message_id(%Ecto.Changeset{params: params} = changeset) do
+    Ecto.Changeset.put_change(
+      changeset,
+      :message_id,
+      Changeset.get_change(changeset, :message_id, params["message_id"])
+    )
+  end
+
+  defp re_put_chat_id(%Ecto.Changeset{params: params} = changeset) do
+    Ecto.Changeset.put_change(
+      changeset,
+      :chat_id,
+      Changeset.get_change(changeset, :chat_id, params["chat_id"])
+    )
+  end
+
+  defp re_put_chat_type(%Ecto.Changeset{params: params} = changeset) do
+    Ecto.Changeset.put_change(
+      changeset,
+      :chat_type,
+      Changeset.get_change(changeset, :chat_type, params["chat_type"])
+    )
+  end
+
+  defp re_put_telegram_id(%Ecto.Changeset{params: params} = changeset) do
+    Ecto.Changeset.put_change(
+      changeset,
+      :telegram_id,
+      Changeset.get_change(changeset, :telegram_id, params["telegram_id"])
+    )
+  end
 end
