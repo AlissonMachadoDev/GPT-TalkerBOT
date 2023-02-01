@@ -32,3 +32,4 @@ gpt_talkerbot-*.tar
 npm-debug.log
 /assets/node_modules/
 
+**/*.secret.exs

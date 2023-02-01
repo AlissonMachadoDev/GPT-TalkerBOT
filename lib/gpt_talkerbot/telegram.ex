@@ -29,13 +29,20 @@ defmodule GptTalkerbot.Telegram do
   end
 
   @doc """
+  Processes a message with its handler
+  """
+  def process_message(%Message{} = m) do
+    with {:ok, handler} <- GptTalkerbot.Telegram.Handlers.get_handler(m) do
+      handler.handle(m)
+    end
+  end
+
+  @doc """
     Enqueues processing for a message
 
     Publishes it as an event in the pubsub
   """
   def enqueue_processing!(%Message{} = m) do
     RMQPublisher.publish_message(m)
-    # Logic to publish at RabbitMQ
-
   end
 end

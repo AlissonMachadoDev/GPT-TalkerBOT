@@ -28,6 +28,7 @@ defmodule GptTalkerbot.Application do
           []
         }
       },
+      GptTalkerbot.BotProcessor
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

@@ -48,7 +48,8 @@ defmodule GptTalkerbot.MixProject do
       {:plug_cowboy, "~> 2.5"},
       {:broadway, "~> 1.0"},
       {:broadway_rabbitmq, "~> 0.7"},
-      {:gen_rmq, "~> 4.0"}
+      {:gen_rmq, "~> 4.0"},
+      {:tesla, "~> 1.5"}
     ]
   end
 
