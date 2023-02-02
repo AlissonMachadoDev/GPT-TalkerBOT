@@ -23,7 +23,6 @@ defmodule GptTalkerbot.Telegram.ClientInputs do
               |> Changeset.apply_changes()
               |> Map.from_struct()
               |> GptTalkerbot.Telegram.ClientInputs.drop_nil()
-              |> IO.inspect(label: "input return")
 
             {:ok, input_map}
 

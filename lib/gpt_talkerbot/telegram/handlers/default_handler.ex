@@ -11,7 +11,6 @@ defmodule GptTalkerbot.Telegram.Handlers.DefaultHandler do
 
   @impl true
   def handle(%Message{message_id: id}) do
-
-    {:ok, nil}
+    {:ok, id}
   end
 end
