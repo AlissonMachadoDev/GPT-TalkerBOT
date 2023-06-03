@@ -22,11 +22,23 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
     post("/completions", %{
       "model" => "text-davinci-003",
       "prompt" => text,
-      "temperature" => 0.9,
-      "max_tokens" => 1900,
-      "top_p" => 0.67,
-      "frequency_penalty" => 0.5,
-      "presence_penalty" => 0
+      "temperature" => 1.2,
+      "top_p" => 0.6,
+      "max_tokens" => 2300
+
+    })
+    |> handle_response()
+  end
+
+
+  def gpt_completion(messages) do
+    post("/chat/completions", %{
+      "model" => "gpt-4",
+      "messages" => messages,
+      "temperature" => 0.7,
+      "top_p" => 0.6,
+      "max_tokens" => 2300
+
     })
     |> handle_response()
   end
@@ -41,6 +53,8 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
       case client.status do
         200 ->
           {:ok, client.body}
+        500 ->
+          {:error, client.body}
       end
     end
   end
