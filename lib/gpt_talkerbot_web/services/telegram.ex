@@ -32,7 +32,6 @@ defmodule GptTalkerbotWeb.Services.Telegram do
   end
 
   defp build_and_send(fun, route, module, params) do
-    IO.inspect(route, label: "the route")
     with {:ok, input} <- module.build(params) do
       fun.(route, input)
     end
