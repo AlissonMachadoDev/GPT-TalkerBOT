@@ -6,9 +6,10 @@ defmodule GptTalkerbot.Commands.Command do
   @foreign_key_type :binary_id
   schema "commands" do
     field :content, :string
-    field :enabled, :boolean, default: false
+    field :enabled, :boolean, default: true
     field :key, :string
-    field :user_id, :string
+
+    belongs_to :user, GptTalkerbot.Access.User
 
     timestamps()
   end
@@ -18,5 +19,6 @@ defmodule GptTalkerbot.Commands.Command do
     command
     |> cast(attrs, [:key, :content, :enabled, :user_id])
     |> validate_required([:key, :content, :enabled, :user_id])
+    |> foreign_key_constraint(:user_id)
   end
 end

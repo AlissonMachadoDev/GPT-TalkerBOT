@@ -21,6 +21,10 @@ defmodule GptTalkerbot.Commands do
     Repo.all(Command)
   end
 
+  def list_user_commands(user) do
+    Repo.all(from c in Command, where: c.user_id == ^user.id)
+  end
+
   @doc """
   Gets a single command.
 
@@ -49,9 +53,9 @@ defmodule GptTalkerbot.Commands do
       {:error, %Ecto.Changeset{}}
 
   """
-  def create_command(attrs \\ %{}) do
+  def create_command(user, attrs \\ %{}) do
     %Command{}
-    |> Command.changeset(attrs)
+    |> Command.changeset(Map.put(attrs, :user_id, user.id))
     |> Repo.insert()
   end
 
