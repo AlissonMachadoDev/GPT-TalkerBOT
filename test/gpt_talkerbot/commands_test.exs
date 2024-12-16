@@ -21,7 +21,12 @@ defmodule GptTalkerbot.CommandsTest do
     end
 
     test "create_command/1 with valid data creates a command" do
-      valid_attrs = %{content: "some content", enabled: true, key: "some key", user_id: "some user_id"}
+      valid_attrs = %{
+        content: "some content",
+        enabled: true,
+        key: "some key",
+        user_id: "some user_id"
+      }
 
       assert {:ok, %Command{} = command} = Commands.create_command(valid_attrs)
       assert command.content == "some content"
@@ -36,7 +41,13 @@ defmodule GptTalkerbot.CommandsTest do
 
     test "update_command/2 with valid data updates the command" do
       command = command_fixture()
-      update_attrs = %{content: "some updated content", enabled: false, key: "some updated key", user_id: "some updated user_id"}
+
+      update_attrs = %{
+        content: "some updated content",
+        enabled: false,
+        key: "some updated key",
+        user_id: "some updated user_id"
+      }
 
       assert {:ok, %Command{} = command} = Commands.update_command(command, update_attrs)
       assert command.content == "some updated content"

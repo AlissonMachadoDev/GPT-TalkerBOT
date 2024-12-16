@@ -73,6 +73,39 @@ defmodule GptTalkerbot.Access do
     |> Repo.update()
   end
 
+  def set_user_api_key(%User{} = user, api_key) do
+    user
+    |>update_user(%{api_key: api_key, master_user_id: nil})
+  end
+
+  def remove_user_api_key(%User{} = user) do
+    user
+    |>update_user(%{api_key: nil})
+  end
+
+  def is_user_master?(user), do: user.api_key != nil
+
+  def is_user_slave?(user), do: user.master_user_id != nil
+
+  def is_user_accessible?(user), do: user.api_key != nil or user.master_user_id != nil
+
+  def get_user_master(user) do
+    Repo.get(User, user.master_user_id)
+  end
+
+  def list_user_slaves(user) do
+    Repo.all(from u in User, where: u.master_user_id == ^user.id)
+  end
+
+  def is_user_slave_of?(user, master_user) do
+    user.master_user_id == master_user.id
+  end
+
+  def update_user_dependency(%User{} = user, master_user) do
+    user
+    |>update_user(%{master_user_id: master_user.id})
+  end
+
   @doc """
   Deletes a user.
 
@@ -117,6 +150,10 @@ defmodule GptTalkerbot.Access do
     Repo.all(Group)
   end
 
+  def list_user_groups(user) do
+    Repo.all(from g in Group, where: g.user_id == ^user.id)
+  end
+
   @doc """
   Gets a single group.
 
@@ -145,9 +182,10 @@ defmodule GptTalkerbot.Access do
       {:error, %Ecto.Changeset{}}
 
   """
-  def create_group(attrs \\ %{}) do
+  def create_group(user, attrs \\ %{}) do
+
     %Group{}
-    |> Group.changeset(attrs)
+    |> Group.changeset(Map.put(attrs, :user_id, user.id))
     |> Repo.insert()
   end
 

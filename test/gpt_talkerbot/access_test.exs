@@ -21,7 +21,11 @@ defmodule GptTalkerbot.AccessTest do
     end
 
     test "create_user/1 with valid data creates a user" do
-      valid_attrs = %{api_key: "some api_key", master_user_id: "some master_user_id", telegram_id: "some telegram_id"}
+      valid_attrs = %{
+        api_key: "some api_key",
+        master_user_id: "some master_user_id",
+        telegram_id: "some telegram_id"
+      }
 
       assert {:ok, %User{} = user} = Access.create_user(valid_attrs)
       assert user.api_key == "some api_key"
@@ -35,7 +39,12 @@ defmodule GptTalkerbot.AccessTest do
 
     test "update_user/2 with valid data updates the user" do
       user = user_fixture()
-      update_attrs = %{api_key: "some updated api_key", master_user_id: "some updated master_user_id", telegram_id: "some updated telegram_id"}
+
+      update_attrs = %{
+        api_key: "some updated api_key",
+        master_user_id: "some updated master_user_id",
+        telegram_id: "some updated telegram_id"
+      }
 
       assert {:ok, %User{} = user} = Access.update_user(user, update_attrs)
       assert user.api_key == "some updated api_key"
