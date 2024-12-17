@@ -1,20 +1,77 @@
 defmodule GptTalkerbotWeb.BotController do
+  alias GptTalkerbotWeb.BotController
   use GptTalkerbotWeb, :controller
 
   require Logger
   alias GptTalkerbot.Telegram
+  alias GptTalkerbot.Access
+  alias GptTalkerbot.Commands
+  alias BotController.Administrator
+  # alias GptTalkerbot.Commands
 
-  @allowed_users Application.get_env(:gpt_talkerbot, :allowed_users)
+  @administrator_commands Administrator.administrator_commands()
 
-  def receive(conn, %{"message" => %{"text" => "/mygpt@gpt_talkerbot " <> _text, "from" => %{"id" => user_id}} = message} = _params) when (user_id in @allowed_users or @allowed_users == []) do
-    handle_bot(conn, message)
+  def receive(
+        conn,
+        %{
+          "message" =>
+            %{
+              "text" => "/" <> text,
+              "chat" => %{"type" => "private"},
+              "from" => %{"id" => user_id, "is_bot" => false}
+            } = message
+        } = _params
+      ) do
+    command = text |> String.split(" ", parts: 2) |> List.first()
+
+    if Access.is_registered(user_id) do
+      user_commands = Commands.list_user_command_names(user_id)
+
+      cond do
+        command in @administrator_commands ->
+          apply(Administrator, String.to_atom(command), [
+            message
+          ])
+
+        command in user_commands ->
+          handle_bot(conn, message)
+
+        true ->
+          nil
+      end
+    end
+
+    send_resp(conn, 204, "")
   end
 
-  def receive(conn, %{"message" => %{"text" => "/mygpt " <> _text, "from" => %{"id" => user_id}} = message} = _params) when (user_id in @allowed_users or  @allowed_users == []) do
-    handle_bot(conn, message)
+  def receive(
+        conn,
+        %{
+          "message" =>
+            %{
+              "text" => "/" <> text,
+              "chat" => %{"id" => chat_id, "type" => "group"},
+              "from" => %{"id" => user_id, "is_bot" => false}
+            } = message
+        } = _params
+      ) do
+    command = text |> String.split(" ", parts: 2) |> List.first()
+
+    if Access.is_registered(user_id) and Access.is_group_registered(chat_id) do
+      commands = Commands.list_group_commands(chat_id)
+
+      if command in commands do
+        Administrator.register2(message)
+      end
+    end
+
+    send_resp(conn, 204, "")
   end
 
-  def receive(conn, _), do: send_resp(conn, 204, "")
+  def receive(conn, params) do
+    IO.inspect(params)
+    send_resp(conn, 204, "")
+  end
 
   defp handle_bot(conn, message) do
     with {:ok, message} <- Telegram.build_message(message),

@@ -36,6 +36,7 @@ defmodule GptTalkerbot.Access do
 
   """
   def get_user!(id), do: Repo.get!(User, id)
+  def get_user_by_telegram_id!(id), do: Repo.get_by!(User, telegram_id: id)
 
   @doc """
   Creates a user.
@@ -75,12 +76,12 @@ defmodule GptTalkerbot.Access do
 
   def set_user_api_key(%User{} = user, api_key) do
     user
-    |>update_user(%{api_key: api_key, master_user_id: nil})
+    |> update_user(%{api_key: api_key, master_user_id: nil})
   end
 
   def remove_user_api_key(%User{} = user) do
     user
-    |>update_user(%{api_key: nil})
+    |> update_user(%{api_key: nil})
   end
 
   def is_user_master?(user), do: user.api_key != nil
@@ -103,7 +104,7 @@ defmodule GptTalkerbot.Access do
 
   def update_user_dependency(%User{} = user, master_user) do
     user
-    |>update_user(%{master_user_id: master_user.id})
+    |> update_user(%{master_user_id: master_user.id})
   end
 
   @doc """
@@ -133,6 +134,10 @@ defmodule GptTalkerbot.Access do
   """
   def change_user(%User{} = user, attrs \\ %{}) do
     User.changeset(user, attrs)
+  end
+
+  def is_registered(user_id) do
+    Repo.exists?(User, telegram_id: user_id)
   end
 
   alias GptTalkerbot.Access.Group
@@ -169,6 +174,7 @@ defmodule GptTalkerbot.Access do
 
   """
   def get_group!(id), do: Repo.get!(Group, id)
+  def get_group_by_telegram_id!(id), do: Repo.get_by!(Group, telegram_id: id)
 
   @doc """
   Creates a group.
@@ -183,7 +189,6 @@ defmodule GptTalkerbot.Access do
 
   """
   def create_group(user, attrs \\ %{}) do
-
     %Group{}
     |> Group.changeset(Map.put(attrs, :user_id, user.id))
     |> Repo.insert()
@@ -234,5 +239,9 @@ defmodule GptTalkerbot.Access do
   """
   def change_group(%Group{} = group, attrs \\ %{}) do
     Group.changeset(group, attrs)
+  end
+
+  def is_group_registered(chat_id) do
+    Repo.exists?(Group, telegram_id: chat_id)
   end
 end
