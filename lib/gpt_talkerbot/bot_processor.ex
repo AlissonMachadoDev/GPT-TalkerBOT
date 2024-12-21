@@ -25,7 +25,6 @@ defmodule GptTalkerbot.BotProcessor do
         ]
       ]
     )
-
   end
 
   @impl true

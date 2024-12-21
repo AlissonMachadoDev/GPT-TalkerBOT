@@ -75,7 +75,7 @@ defmodule GptTalkerbot.Telegram.Message do
     Ecto.Changeset.put_change(
       changeset,
       :chat_id,
-      Changeset.get_change(changeset, :chat_id, params["chat"]["id"] |> Integer.to_string())
+      Changeset.get_change(changeset, :chat_id, params["chat"]["id"])
     )
   end
 
@@ -83,7 +83,7 @@ defmodule GptTalkerbot.Telegram.Message do
     Ecto.Changeset.put_change(
       changeset,
       :message_id,
-      Changeset.get_change(changeset, :message_id, params["message_id"] |> Integer.to_string())
+      Changeset.get_change(changeset, :message_id, params["message_id"])
     )
   end
 
@@ -99,7 +99,7 @@ defmodule GptTalkerbot.Telegram.Message do
     Ecto.Changeset.put_change(
       changeset,
       :telegram_id,
-      Changeset.get_change(changeset, :telegram_id, params["id"] |> Integer.to_string())
+      Changeset.get_change(changeset, :telegram_id, params["id"])
     )
   end
 
