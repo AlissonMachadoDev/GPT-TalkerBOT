@@ -188,7 +188,7 @@ defmodule GptTalkerbot.Access do
       {:error, %Ecto.Changeset{}}
 
   """
-  def create_group(user, attrs \\ %{}) do
+  def create_group(%User{} = user, attrs \\ %{}) do
     %Group{}
     |> Group.changeset(Map.put(attrs, :user_id, user.id))
     |> Repo.insert()

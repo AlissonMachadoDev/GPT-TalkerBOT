@@ -9,7 +9,8 @@ defmodule GptTalkerbotWeb.BotController do
   alias BotController.Administrator
   # alias GptTalkerbot.Commands
 
-  @administrator_commands Administrator.administrator_commands()
+  @private_commands Administrator.private_commands()
+  @group_commands Administrator.group_commands()
 
   def receive(
         conn,
@@ -28,7 +29,7 @@ defmodule GptTalkerbotWeb.BotController do
       user_commands = Commands.list_user_command_names(user_id)
 
       cond do
-        command in @administrator_commands ->
+        command in @private_commands ->
           apply(Administrator, String.to_atom(command), [
             message
           ])
@@ -57,12 +58,21 @@ defmodule GptTalkerbotWeb.BotController do
       ) do
     command = text |> String.split(" ", parts: 2) |> List.first()
 
-    if Access.is_registered(user_id) and Access.is_group_registered(chat_id) do
-      commands = Commands.list_group_commands(chat_id)
+    cond do
+      Access.is_group_registered(chat_id) and command in @group_commands ->
+        apply(Administrator, String.to_atom(command), [
+          message
+        ])
 
-      if command in commands do
-        Administrator.register2(message)
-      end
+      Access.is_group_registered(chat_id) ->
+        commands = Commands.list_group_commands(chat_id)
+
+        if command in commands do
+          handle_bot(conn, message)
+        end
+
+      Access.is_registered(user_id) and command == "register_group" ->
+        Administrator.register_group(message)
     end
 
     send_resp(conn, 204, "")

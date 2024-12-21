@@ -17,5 +17,6 @@ defmodule GptTalkerbot.Access.Group do
     |> cast(attrs, [:telegram_id, :user_id])
     |> validate_required([:telegram_id, :user_id])
     |> foreign_key_constraint(:user_id)
+    |> unique_constraint(:telegram_id, name: :groups_telegram_id_index)
   end
 end
