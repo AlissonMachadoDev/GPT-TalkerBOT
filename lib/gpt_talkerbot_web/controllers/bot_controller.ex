@@ -7,7 +7,7 @@ defmodule GptTalkerbotWeb.BotController do
   alias GptTalkerbot.Access
   alias GptTalkerbot.Commands
   alias BotController.Administrator
-  # alias GptTalkerbot.Commands
+  alias GptTalkerbot.Commands
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()

@@ -244,4 +244,28 @@ defmodule GptTalkerbot.Access do
   def is_group_registered(chat_id) do
     Repo.exists?(Group, telegram_id: chat_id)
   end
+
+  @doc """
+    Gets OPEN AI API key from user params
+  """
+  def get_key_for_user(user) do
+    cond do
+      is_user_master?(user) -> {:ok, user.api_key}
+      is_user_slave?(user) -> {:ok, get_user_master(user).api_key}
+      true -> {:error, :no_access}
+    end
+  end
+
+  @doc """
+  Gets OPEN AI API key from user that registered the group.
+  """
+  def get_key_for_group(group_id) do
+    if is_group_registered(group_id) do
+      group_id
+      |> GptTalkerbot.Commands.get_user_group()
+      |> get_key_for_user()
+    else
+      {:error, :group_not_registered}
+    end
+  end
 end

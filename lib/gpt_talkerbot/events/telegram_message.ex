@@ -27,7 +27,7 @@ defmodule GptTalkerbot.Events.TelegramMessage do
 
   def recast(params) do
     params
-    |> Message.recast()
+    |> Message.cast()
     |> case do
       %{valid?: true} = changeset ->
         {:ok, Ecto.Changeset.apply_changes(changeset)}

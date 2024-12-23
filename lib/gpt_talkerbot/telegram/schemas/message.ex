@@ -6,7 +6,6 @@ defmodule GptTalkerbot.Telegram.Message do
 
   alias Ecto.Changeset
 
-  # maybe move this soon?
   defmodule From do
     use Ecto.Schema
 
@@ -41,7 +40,6 @@ defmodule GptTalkerbot.Telegram.Message do
     field :text, :string
 
     embeds_one :from, From
-
     embeds_one :reply_to_message, ReplyToMessage
   end
 
@@ -49,9 +47,7 @@ defmodule GptTalkerbot.Telegram.Message do
     %__MODULE__{}
     |> Changeset.cast(params, [:text, :chat_id, :chat_type])
     |> Changeset.validate_required([:text])
-    |> put_chat_id()
-    |> put_chat_type()
-    |> put_message_id()
+    |> put_fields(params)
     |> Changeset.cast_embed(:from, with: &from_changeset/2)
     |> Changeset.cast_embed(:reply_to_message, with: &reply_to_message_changeset/2)
   end
@@ -59,106 +55,60 @@ defmodule GptTalkerbot.Telegram.Message do
   defp reply_to_message_changeset(schema, params) do
     schema
     |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name])
-    |> put_chat_id()
-    |> put_chat_type()
-    |> put_message_id()
+    |> put_fields(params)
     |> Changeset.cast_embed(:from, with: &from_changeset/2)
   end
 
   defp from_changeset(schema, params) do
     schema
     |> Changeset.cast(params, [:first_name, :language_code, :telegram_id, :username])
-    |> put_telegram_id()
+    |> put_telegram_id(params)
   end
 
-  defp put_chat_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :chat_id,
-      Changeset.get_change(changeset, :chat_id, params["chat"]["id"])
-    )
+  defp put_fields(changeset, params) do
+    changeset
+    |> put_chat_id(params)
+    |> put_chat_type(params)
+    |> put_message_id(params)
   end
 
-  defp put_message_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :message_id,
-      Changeset.get_change(changeset, :message_id, params["message_id"])
-    )
+  defp put_chat_id(changeset, %{"chat" => %{"id" => id}}) do
+    Changeset.put_change(changeset, :chat_id, id)
   end
 
-  defp put_chat_type(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :chat_type,
-      Changeset.get_change(changeset, :chat_type, params["chat"]["type"])
-    )
+  defp put_chat_id(changeset, %{"chat_id" => id}) when is_binary(id) do
+    Changeset.put_change(changeset, :chat_id, id)
   end
 
-  defp put_telegram_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :telegram_id,
-      Changeset.get_change(changeset, :telegram_id, params["id"])
-    )
+  defp put_chat_id(changeset, _), do: changeset
+
+  defp put_message_id(changeset, %{"message_id" => id}) when is_integer(id) do
+    Changeset.put_change(changeset, :message_id, Integer.to_string(id))
   end
 
-  # Rebuild functions ________________________________________________________
-
-  def recast(params) do
-    %__MODULE__{}
-    |> Changeset.cast(params, [:text, :chat_id, :chat_type])
-    |> Changeset.validate_required([:text])
-    |> re_put_chat_id()
-    |> re_put_chat_type()
-    |> re_put_message_id()
-    |> Changeset.cast_embed(:from, with: &re_from_changeset/2)
-    |> Changeset.cast_embed(:reply_to_message, with: &re_reply_to_message_changeset/2)
+  defp put_message_id(changeset, %{"message_id" => id}) when is_binary(id) do
+    Changeset.put_change(changeset, :message_id, id)
   end
 
-  defp re_reply_to_message_changeset(schema, params) do
-    schema
-    |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name])
-    |> re_put_chat_id()
-    |> re_put_chat_type()
-    |> Changeset.cast_embed(:from, with: &re_from_changeset/2)
+  defp put_message_id(changeset, _), do: changeset
+
+  defp put_chat_type(changeset, %{"chat" => %{"type" => type}}) do
+    Changeset.put_change(changeset, :chat_type, type)
   end
 
-  defp re_from_changeset(schema, params) do
-    schema
-    |> Changeset.cast(params, [:first_name, :language_code, :telegram_id, :username])
-    |> re_put_telegram_id()
+  defp put_chat_type(changeset, %{"chat_type" => type}) when is_binary(type) do
+    Changeset.put_change(changeset, :chat_type, type)
   end
 
-  defp re_put_message_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :message_id,
-      Changeset.get_change(changeset, :message_id, params["message_id"])
-    )
+  defp put_chat_type(changeset, _), do: changeset
+
+  defp put_telegram_id(changeset, %{"id" => id}) when is_integer(id) do
+    Changeset.put_change(changeset, :telegram_id, Integer.to_string(id))
   end
 
-  defp re_put_chat_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :chat_id,
-      Changeset.get_change(changeset, :chat_id, params["chat_id"])
-    )
+  defp put_telegram_id(changeset, %{"telegram_id" => id}) when is_binary(id) do
+    Changeset.put_change(changeset, :telegram_id, id)
   end
 
-  defp re_put_chat_type(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :chat_type,
-      Changeset.get_change(changeset, :chat_type, params["chat_type"])
-    )
-  end
-
-  defp re_put_telegram_id(%Ecto.Changeset{params: params} = changeset) do
-    Ecto.Changeset.put_change(
-      changeset,
-      :telegram_id,
-      Changeset.get_change(changeset, :telegram_id, params["telegram_id"])
-    )
-  end
+  defp put_telegram_id(changeset, _), do: changeset
 end
