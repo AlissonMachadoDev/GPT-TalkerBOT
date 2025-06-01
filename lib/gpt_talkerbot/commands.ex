@@ -105,6 +105,10 @@ defmodule GptTalkerbot.Commands do
   def change_command(%Command{} = command, attrs \\ %{}) do
     Command.changeset(command, attrs)
   end
+
+  def find_command_by_key(key) do
+    Repo.one(from c in Command, where: c.key == ^key)
+  end
 end
 
 # Preciso de uma estrutura baseada no telegram em que o usuário tenha seu id, uma chave de api do chatgpt e que esses usuários possam ser vinculados à outros usuários para poderem usar a chave de api deles;

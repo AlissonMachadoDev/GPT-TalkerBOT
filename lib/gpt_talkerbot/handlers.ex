@@ -20,11 +20,6 @@ defmodule GptTalkerbot.Telegram.Handlers do
   Matches a message with its handler module
   """
   def get_handler(%Message{text: "/help" <> ""}), do: {:ok, HelpHandler}
-  def get_handler(%Message{text: "/mygpt "<> _command}), do: {:ok, MessageHandler}
-  def get_handler(%Message{text: "/mygpt@gpt_talkerbot "<> _command}), do: {:ok, MessageHandler}
-  def get_handler(%Message{text: "/debose"}), do: {:ok, CommandHandler}
-  def get_handler(%Message{text: "/ratobo "<> _command}), do: {:ok, MessageHandler}
-  def get_handler(%Message{text: "/ratobo@gpt_talkerbot "<> _command}), do: {:ok, MessageHandler}
   def get_handler(%Message{text: "/" <> _command}), do: {:ok, CommandHandler}
   def get_handler(_), do: {:ok, DefaultHandler}
 end
