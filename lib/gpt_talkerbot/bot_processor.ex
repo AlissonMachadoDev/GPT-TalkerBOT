@@ -25,14 +25,13 @@ defmodule GptTalkerbot.BotProcessor do
         ]
       ]
     )
-
   end
 
   @impl true
   def handle_message(_processor, %BroadwayMessage{data: data} = message, _context) do
     {:ok, given_message} =
       Jason.decode!(data)
-      |> then(&Telegram.rebuild_message(&1["message"]))
+      |> then(&Telegram.build_message(&1["message"]))
 
     Telegram.process_message(given_message)
 

@@ -16,18 +16,6 @@ defmodule GptTalkerbot.Telegram do
     end
   end
 
-  def rebuild_message(params) do
-    params
-    |> Message.recast()
-    |> case do
-      %Ecto.Changeset{valid?: true} = changeset ->
-        {:ok, Ecto.Changeset.apply_changes(changeset)}
-
-      changeset ->
-        {:error, changeset}
-    end
-  end
-
   @doc """
   Processes a message with its handler
   """
@@ -38,9 +26,9 @@ defmodule GptTalkerbot.Telegram do
   end
 
   @doc """
-    Enqueues processing for a message
+  Enqueues processing for a message
 
-    Publishes it as an event in the pubsub
+  Publishes it as an event in the pubsub
   """
   def enqueue_processing!(%Message{} = m) do
     RMQPublisher.publish_message(m)
