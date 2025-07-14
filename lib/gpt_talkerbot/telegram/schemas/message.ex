@@ -6,7 +6,6 @@ defmodule GptTalkerbot.Telegram.Message do
 
   alias Ecto.Changeset
 
-  # maybe move this soon?
   defmodule From do
     use Ecto.Schema
 
@@ -66,7 +65,6 @@ defmodule GptTalkerbot.Telegram.Message do
     |> put_telegram_id(params)
   end
 
-  # Flexible field handling
   defp put_fields(changeset, params) do
     changeset
     |> put_chat_id(params)

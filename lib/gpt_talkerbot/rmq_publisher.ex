@@ -22,6 +22,7 @@ defmodule GptTalkerbot.RMQPublisher do
 
   def init do
     create_rmq_resources()
+
     [
       connection: @rmq_uri,
       exchange: @bot_exchange
@@ -29,7 +30,6 @@ defmodule GptTalkerbot.RMQPublisher do
   end
 
   def create_rmq_resources do
-
     # Setup RabbitMQ connection
     {:ok, connection} = AMQP.Connection.open(@rmq_uri)
     {:ok, channel} = AMQP.Channel.open(connection)

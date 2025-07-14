@@ -4,7 +4,9 @@ defmodule GptTalkerbot.Commands do
   """
 
   import Ecto.Query, warn: false
+  alias GptTalkerbot.Access
   alias GptTalkerbot.Repo
+  alias GptTalkerbot.Access.User
 
   alias GptTalkerbot.Commands.Command
 
@@ -21,8 +23,23 @@ defmodule GptTalkerbot.Commands do
     Repo.all(Command)
   end
 
-  def list_user_commands(user) do
+  def list_user_commands(%User{} = user) do
     Repo.all(from c in Command, where: c.user_id == ^user.id)
+  end
+
+  def list_user_commands(user_id) when is_binary(user_id) do
+    Access.get_user_by_telegram_id!(user_id)
+    |> list_user_commands()
+  end
+
+  def list_user_command_names(%User{} = user) do
+    list_user_commands(user.telegram_id)
+    |> Enum.map(& &1.key)
+  end
+
+  def list_user_command_names(user_id) do
+    list_user_commands(user_id)
+    |> Enum.map(& &1.key)
   end
 
   @doc """
@@ -104,6 +121,16 @@ defmodule GptTalkerbot.Commands do
   """
   def change_command(%Command{} = command, attrs \\ %{}) do
     Command.changeset(command, attrs)
+  end
+
+  def get_user_group(group_id) do
+    group = Access.get_group_by_telegram_id!(group_id)
+    Access.get_user!(group.user_id)
+  end
+
+  def list_group_commands(group_id) do
+    user = get_user_group(group_id)
+    list_user_command_names(user)
   end
 
   def find_command_by_key(key) do

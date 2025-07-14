@@ -20,5 +20,5 @@ defmodule GptTalkerbotWeb.Gettext do
 
   See the [Gettext Docs](https://hexdocs.pm/gettext) for detailed usage.
   """
-  use Gettext, otp_app: :gpt_talkerbot
+  use Gettext.Backend, otp_app: :gpt_talkerbot
 end

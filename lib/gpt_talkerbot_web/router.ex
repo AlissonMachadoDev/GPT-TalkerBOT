@@ -3,6 +3,7 @@ defmodule GptTalkerbotWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug GptTalkerbotWeb.DataFormat
   end
 
   scope "/", GptTalkerbotWeb do
