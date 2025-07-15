@@ -51,7 +51,7 @@ defmodule GptTalkerbot.MixProject do
       {:tesla, "~> 1.5"},
       {:broadway_rabbitmq, "~> 0.7"},
       {:amqp, "~> 3.3"},
-      {:rabbit_common, "~> 3.9.0"},
+      {:rabbit_common, "~> 3.12.0"},
       {:ssl_verify_fun, "~> 1.1.7"}
     ]
   end
