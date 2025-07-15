@@ -1,0 +1,90 @@
+name: 'Deploy to AWS'
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: 'Deploy to EC2'
+    runs-on: ubuntu-latest
+    
+    environment: production
+    
+    steps:
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.17.3'
+          otp-version: '27.1'
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install Dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          
+      - name: Setup and Build Assets
+        run: |
+          npm install --prefix assets
+          
+      - name: Create Production Release
+        env:
+          MIX_ENV: prod
+          SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+        run: |
+          mix compile
+          mix phx.digest
+          mix release --overwrite
+          
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          
+      - name: Create or Update CodeDeploy Application
+        run: |
+          aws deploy create-application \
+            --application-name gpt_talkerbot || true
+            
+      - name: Create or Update Deployment Group
+        run: |
+          aws deploy create-deployment-group \
+            --application-name gpt_talkerbot \
+            --deployment-group-name gpt_talkerbot-production \
+            --service-role-arn ${{ secrets.AWS_CODEDEPLOY_SERVICE_ROLE }} \
+            --deployment-style deploymentType=IN_PLACE,deploymentOption=WITHOUT_TRAFFIC_CONTROL \
+            --ec2-tag-filters Key=Environment,Type=KEY_AND_VALUE,Value=Production || true
+                  
+      - name: Create Deployment Package
+        run: |
+          mkdir -p deployment-package
+          cp -r _build/prod/rel/gpt_talkerbot deployment-package/
+          cp appspec.yml deployment-package/
+          cp -r scripts deployment-package/
+          cd deployment-package
+          zip -r ../deployment-package.zip .
+
+      - name: Create CodeDeploy Deployment
+        run: |
+          aws deploy create-deployment \
+            --application-name gpt_talkerbot \
+            --deployment-group-name gpt_talkerbot-production \
+            --github-location repository=${{ github.repository }},commitId=${{ github.sha }}
