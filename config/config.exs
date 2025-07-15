@@ -65,6 +65,7 @@ end
 config :gpt_talkerbot, :allowed_users, parse_env_list.("ALLOWED_USERS")
 config :gpt_talkerbot, :allowed_groups, parse_env_list.("ALLOWED_GROUPS")
 config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
+config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
