@@ -1,14 +1,20 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
+  @moduledoc """
+  Sends a simple help message
+  """
+
   alias GptTalkerbot.Telegram.Message
   alias GptTalkerbotWeb.Services.{Telegram, OpenAI}
   alias GptTalkerbot.Access
 
   @behaviour GptTalkerbot.Telegram.Handlers
+  @api_key Application.get_env(:gpt_talkerbot, :openai_api_key)
 
+  @impl true
   def handle(%Message{
         chat_id: chat_id,
         text: text,
-        chat_type: "private",
+        chat_type: "private_temp",
         from: %{telegram_id: user_id}
       }) do
     with user <- Access.get_user_by_telegram_id!(user_id),
@@ -23,15 +29,24 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   def handle(%Message{
         chat_id: chat_id,
         text: text,
-        chat_type: "group",
+        chat_type: group,
         from: %{telegram_id: user_id}
-      }) do
+      })
+      when group in ["group_temp", "supergroup_temp"] do
     with {:ok, api_key} <- Access.get_key_for_group(chat_id) do
       process_gpt_message(api_key, text, chat_id, user_id)
     else
       {:error, :group_not_registered} -> send_message(chat_id, "Grupo não registrado")
       _ -> send_message(chat_id, "Ocorreu um erro")
     end
+  end
+
+  def handle(%Message{
+        chat_id: chat_id,
+        text: text,
+        from: %{telegram_id: user_id}
+      }) do
+    process_gpt_message(@api_key, text, chat_id, user_id)
   end
 
   defp process_gpt_message(api_key, text, chat_id, user_id) do

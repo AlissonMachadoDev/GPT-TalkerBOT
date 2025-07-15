@@ -132,4 +132,13 @@ defmodule GptTalkerbot.Commands do
     user = get_user_group(group_id)
     list_user_command_names(user)
   end
+
+  def find_command_by_key(key) do
+    Repo.one(from c in Command, where: c.key == ^key)
+  end
 end
+
+# Preciso de uma estrutura baseada no telegram em que o usuário tenha seu id, uma chave de api do chatgpt e que esses usuários possam ser vinculados à outros usuários para poderem usar a chave de api deles;
+# que exista grupos com id que pertençam a usuários que tem chave de api para que esses grupos possam utilizar essas chaves;
+# que os commands estejam também vinculados à esses users de telegram;
+#  por fim, preciso de um meio de que esses usuários possam logar pela interface online usando a api de login do telegram.

@@ -16,7 +16,7 @@ config :gpt_talkerbot, GptTalkerbot.Repo,
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :gpt_talkerbot, GptTalkerbotWeb.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 4002],
+  http: [ip: {127, 0, 0, 1}, port: 4000],
   secret_key_base: "iZfB73gUMqcKQLRiJQ8QsASCefvu1ooT6qbOdVOPOTuZqC2hcQUxCmpoRctsBeap",
   server: false
 

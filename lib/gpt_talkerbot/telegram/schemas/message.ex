@@ -1,6 +1,6 @@
 defmodule GptTalkerbot.Telegram.Message do
   @moduledoc """
-  Representation of a message
+  Representation of a message with flexible casting for both initial and rebuilt messages
   """
   use Ecto.Schema
 
@@ -73,7 +73,7 @@ defmodule GptTalkerbot.Telegram.Message do
   end
 
   defp put_chat_id(changeset, %{"chat" => %{"id" => id}}) do
-    Changeset.put_change(changeset, :chat_id, id)
+    Changeset.put_change(changeset, :chat_id, Integer.to_string(id))
   end
 
   defp put_chat_id(changeset, %{"chat_id" => id}) when is_binary(id) do

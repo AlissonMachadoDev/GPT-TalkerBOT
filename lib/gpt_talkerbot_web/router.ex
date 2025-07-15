@@ -6,8 +6,10 @@ defmodule GptTalkerbotWeb.Router do
     plug GptTalkerbotWeb.DataFormat
   end
 
-  scope "/api", GptTalkerbotWeb do
-    pipe_through :api
+  scope "/", GptTalkerbotWeb do
+    scope "/api", GptTalkerbotWeb do
+      pipe_through :api
+    end
 
     post "/webhook", BotController, :receive
   end
