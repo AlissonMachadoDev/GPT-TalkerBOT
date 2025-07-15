@@ -137,7 +137,7 @@ defmodule GptTalkerbot.Access do
   end
 
   def is_registered(user_id) do
-    Repo.exists?(User, telegram_id: user_id)
+    Repo.exists?(from u in User, where: u.telegram_id == ^user_id)
   end
 
   alias GptTalkerbot.Access.Group
@@ -242,7 +242,7 @@ defmodule GptTalkerbot.Access do
   end
 
   def is_group_registered(chat_id) do
-    Repo.exists?(Group, telegram_id: chat_id)
+    Repo.exists?(from g in Group, where: g.telegram_id == ^chat_id)
   end
 
   @doc """
