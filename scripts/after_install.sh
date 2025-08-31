@@ -30,46 +30,9 @@ else
   exit 1
 fi
 
-# Function to install Node.js with timeout
-install_nodejs() {
-  echo "Installing Node.js..."
-
-  # 5-minute timeout for Node.js installation
-  if ! timeout 300 bash -c '
-        sudo apt-get update &&
-        sudo apt-get install -y ca-certificates curl gnupg &&
-        sudo mkdir -p /etc/apt/keyrings &&
-        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg &&
-        echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list &&
-        sudo apt-get update &&
-        sudo apt-get install -y nodejs
-    '; then
-    echo "Node.js installation timed out or failed"
-    exit 1
-  fi
-
-  # Verify installation
-  if ! node --version; then
-    echo "Node.js installation verification failed"
-    exit 1
-  fi
-  if ! npm --version; then
-    echo "npm installation verification failed"
-    exit 1
-  fi
-
-  echo "Node.js installation completed"
-}
-
-# Install Node.js if needed (with timeout check)
-if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
-  install_nodejs
-  check_timeout
-fi
-
-# Verify development tools
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
+echo "Installing Erlang build dependencies..."
+sudo apt-get update -qq
+sudo apt-get install -y build-essential autoconf m4 libncurses5-dev libssl-dev
 
 cd /opt/gpt_talkerbot || {
   echo "Failed to change to application directory"
@@ -77,7 +40,11 @@ cd /opt/gpt_talkerbot || {
 }
 asdf plugin add erlang || true
 asdf plugin add elixir || true
-asdf install
+if ! asdf install; then
+  echo "asdf install failed"
+  ls -la ~/.asdf/plugins/erlang/logs/ || echo "No build logs"
+  exit 1
+fi
 asdf reshim erlang
 asdf reshim elixir
 asdf current
