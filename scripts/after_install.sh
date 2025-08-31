@@ -7,7 +7,7 @@ set -x
 echo "Starting after_install script..."
 
 # Set timeout for the entire script (30 minutes)
-TIMEOUT=600
+TIMEOUT=1800
 SCRIPT_START=$SECONDS
 
 check_timeout() {
@@ -40,11 +40,21 @@ cd /opt/gpt_talkerbot || {
 }
 asdf plugin add erlang || true
 asdf plugin add elixir || true
-if ! asdf install; then
-  echo "asdf install failed"
-  ls -la ~/.asdf/plugins/erlang/logs/ || echo "No build logs"
+
+echo "Installing Erlang 25.3 (may take 10-15 minutes)..."
+if ! asdf install erlang 25.3; then
+  echo "FAILED to install Erlang 25.3"
+  echo "Build logs:"
+  cat ~/.asdf/plugins/erlang/logs/erlang-25.3.log 2>/dev/null || echo "No logs found"
   exit 1
 fi
+
+echo "Installing Elixir 1.14.0-otp-25..."
+if ! asdf install elixir 1.14.0-otp-25; then
+  echo "FAILED to install Elixir 1.14.0-otp-25"
+  exit 1
+fi
+
 asdf reshim erlang
 asdf reshim elixir
 asdf current
