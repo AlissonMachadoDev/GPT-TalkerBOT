@@ -27,7 +27,7 @@ defmodule GptTalkerbotWeb.Router do
     scope "/" do
       pipe_through [:fetch_session, :protect_from_forgery]
 
-      live_dashboard "/dashboard", metrics: GptTalkerbotWeb.Telemetry
+      # live_dashboard "/dashboard", metrics: GptTalkerbotWeb.Telemetry
     end
   end
 
