@@ -70,7 +70,7 @@ if ! check_database_connection "$DB_URL"; then
 fi
 
 echo "Creating database if needed and running migrations..."
-DATABASE_URL="${DB_URL}" SECRET_KEY_BASE="${KEY_BASE}" /opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot eval "DigistabStore.Release.migrate"
+DATABASE_URL="${DB_URL}" SECRET_KEY_BASE="${KEY_BASE}" /opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot eval "GptTalkerbot.Release.migrate"
 
 echo "Enabling and starting gpt_talkerbot service..."
 sudo systemctl enable gpt_talkerbot
