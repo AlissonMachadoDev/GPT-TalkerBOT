@@ -91,10 +91,6 @@ if ! timeout 60 asdf exec mix local.hex --force; then
   echo "Failed to install hex"
   exit 1
 fi
-if ! timeout 60 asdf exec mix local.rebar --force; then
-  echo "Failed to install rebar"
-  exit 1
-fi
 
 # Get dependencies with timeout
 echo "Getting dependencies..."
@@ -106,7 +102,7 @@ check_timeout
 
 # Create production release with timeout
 echo "Creating production release..."
-if ! timeout 300 asdf exec mix release --overwrite; then
+if ! asdf exec mix release --overwrite; then
   echo "Release creation failed"
   exit 1
 fi
