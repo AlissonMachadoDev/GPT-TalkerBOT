@@ -6,12 +6,12 @@ check_database_connection() {
   local wait_time=5
 
   # Extract connection details from DATABASE_URL
-  if [[ $db_url =~ postgres:\/\/([^:]+):([^@]+)@([^\/]+)\/(.+) ]]; then
+  if [[ $db_url =~ postgres:\/\/([^:]+):([^@]+)@([^:]+)(:([0-9]+))?\/(.+) ]]; then
     DB_USER="${BASH_REMATCH[1]}"
     DB_PASS="${BASH_REMATCH[2]}"
     DB_HOST="${BASH_REMATCH[3]}"
-    DB_PORT="5432" # Default PostgreSQL port
-    DB_NAME="${BASH_REMATCH[4]}"
+    DB_PORT="${BASH_REMATCH[5]:-5432}"
+    DB_NAME="${BASH_REMATCH[6]}"
 
     echo "Found database connection details:"
     echo "Host: $DB_HOST"
