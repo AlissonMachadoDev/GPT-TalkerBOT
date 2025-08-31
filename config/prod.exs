@@ -10,7 +10,7 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :gpt_talkerbot, GptTalkerbotWeb.Endpoint,
-  cache_static_manifest: "priv/static/cache_manifest.json"
+  cache_static_manifest: nil
 
 # Do not print debug messages in production
 config :logger, level: :info

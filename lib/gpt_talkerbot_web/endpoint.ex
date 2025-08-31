@@ -10,17 +10,17 @@ defmodule GptTalkerbotWeb.Endpoint do
     signing_salt: "OtTQPoad"
   ]
 
-  socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
+  # socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
 
-  # Serve at "/" the static files from "priv/static" directory.
-  #
-  # You should set gzip to true if you are running phx.digest
-  # when deploying your static files in production.
-  plug Plug.Static,
-    at: "/",
-    from: :gpt_talkerbot,
-    gzip: false,
-    only: ~w(assets fonts images favicon.ico robots.txt)
+  # # Serve at "/" the static files from "priv/static" directory.
+  # #
+  # # You should set gzip to true if you are running phx.digest
+  # # when deploying your static files in production.
+  # plug Plug.Static,
+  #   at: "/",
+  #   from: :gpt_talkerbot,
+  #   gzip: false,
+  #   only: ~w(assets fonts images favicon.ico robots.txt)
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
