@@ -37,7 +37,6 @@ defmodule GptTalkerbot.MixProject do
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.6"},
       {:postgrex, ">= 0.0.0"},
-      {:phoenix_live_dashboard, "~> 0.6"},
       {:esbuild, "~> 0.4", runtime: Mix.env() == :dev},
       {:swoosh, "~> 1.3"},
       {:telemetry_metrics, "~> 0.6"},
@@ -50,6 +49,7 @@ defmodule GptTalkerbot.MixProject do
       {:tesla, "~> 1.5"},
       {:broadway_rabbitmq, "~> 0.8"},
       {:amqp, "~> 3.3"},
+      {:rabbit_common, "~> 3.12.0", override: true},
       {:gen_rmq, "~> 4.0"},
       {:ssl_verify_fun, "~> 1.1.7"}
     ]

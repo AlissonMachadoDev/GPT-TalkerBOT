@@ -21,6 +21,13 @@ check_timeout() {
 export HOME="/home/ubuntu"
 export MIX_ENV=prod
 export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
+export ASDF_DIR="$HOME/.asdf"
+if [ -f "$HOME/.asdf/asdf.sh" ]; then
+  . "$HOME/.asdf/asdf.sh"
+else
+  echo "Error: asdf.sh not found"
+  exit 1
+fi
 
 # Function to install Node.js with timeout
 install_nodejs() {
@@ -63,18 +70,6 @@ fi
 echo "Node.js version: $(node --version)"
 echo "npm version: $(npm --version)"
 
-# Source asdf with error checking
-if [ -f "$HOME/.asdf/asdf.sh" ]; then
-  source "$HOME/.asdf/asdf.sh" || {
-    echo "Failed to source asdf.sh"
-    exit 1
-  }
-  echo "Sourced asdf.sh"
-else
-  echo "Error: asdf.sh not found"
-  exit 1
-fi
-
 # Check required tools
 for cmd in erl elixir mix; do
   if ! command -v $cmd &>/dev/null; then
@@ -89,6 +84,15 @@ cd /opt/gpt_talkerbot || {
   exit 1
 }
 
+asdf plugin add erlang || true
+asdf plugin add elixir || true
+asdf install
+asdf current
+elixir -v || {
+  echo "Elixir via asdf não está ativo"
+  exit 1
+}
+
 # Install rebar3 with timeout
 timeout 60 bash -c '
     wget https://s3.amazonaws.com/rebar3/rebar3 &&
@@ -100,25 +104,25 @@ timeout 60 bash -c '
 }
 
 # Verify rebar3
-if ! rebar3 --version; then
+if ! asdf exec rebar3 --version; then
   echo "rebar3 installation verification failed"
   exit 1
 fi
 
 # Install hex and rebar with timeout
 echo "Installing hex and rebar..."
-if ! timeout 60 mix local.hex --force; then
+if ! timeout 60 asdf exec mix local.hex --force; then
   echo "Failed to install hex"
   exit 1
 fi
-if ! timeout 60 mix local.rebar --force; then
+if ! timeout 60 asdf exec mix local.rebar --force; then
   echo "Failed to install rebar"
   exit 1
 fi
 
 # Get dependencies with timeout
 echo "Getting dependencies..."
-if ! timeout 300 mix deps.get --only prod; then
+if ! timeout 300 asdf exec mix deps.get --only prod; then
   echo "Failed to get dependencies"
   exit 1
 fi
@@ -126,7 +130,7 @@ check_timeout
 
 # Create production release with timeout
 echo "Creating production release..."
-if ! timeout 300 mix release --overwrite; then
+if ! timeout 300 asdf exec mix release --overwrite; then
   echo "Release creation failed"
   exit 1
 fi
