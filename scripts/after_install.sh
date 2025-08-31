@@ -21,6 +21,7 @@ check_timeout() {
 export HOME="/home/ubuntu"
 export MIX_ENV=prod
 export PATH="$HOME/.asdf/shims:$HOME/.asdf/bin:$PATH"
+export ASDF_DATA_DIR="$HOME/.asdf"
 export ASDF_DIR="$HOME/.asdf"
 if [ -f "$HOME/.asdf/asdf.sh" ]; then
   . "$HOME/.asdf/asdf.sh"
@@ -77,6 +78,8 @@ cd /opt/gpt_talkerbot || {
 asdf plugin add erlang || true
 asdf plugin add elixir || true
 asdf install
+asdf reshim erlang
+asdf reshim elixir
 asdf current
 
 for cmd in erl elixir mix; do
@@ -87,7 +90,11 @@ for cmd in erl elixir mix; do
 done
 
 asdf current
-elixir -v || {
+echo "which erl: $(command -v erl)"
+echo "which elixir: $(command -v elixir)"
+asdf which erl || true
+asdf which elixir || true
+asdf exec elixir -v || {
   echo "Elixir via asdf não está ativo"
   exit 1
 }
