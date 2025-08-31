@@ -31,7 +31,7 @@ if config_env() == :prod do
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   config :gpt_talkerbot, GptTalkerbot.Repo,
-    # ssl: true,
+    ssl: false,
     url: database_url,
     pool_size: 20,
     queue_target: 10_000,
