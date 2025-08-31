@@ -20,7 +20,7 @@ check_timeout() {
 # Export environment variables with error checking
 export HOME="/home/ubuntu"
 export MIX_ENV=prod
-export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
+export PATH="$HOME/.asdf/shims:$HOME/.asdf/bin:$PATH"
 export ASDF_DIR="$HOME/.asdf"
 if [ -f "$HOME/.asdf/asdf.sh" ]; then
   . "$HOME/.asdf/asdf.sh"
@@ -70,28 +70,28 @@ fi
 echo "Node.js version: $(node --version)"
 echo "npm version: $(npm --version)"
 
-# Check required tools
-for cmd in erl elixir mix; do
-  if ! command -v $cmd &>/dev/null; then
-    echo "Error: $cmd not found"
-    exit 1
-  fi
-done
-
-# Navigate to application directory
 cd /opt/gpt_talkerbot || {
   echo "Failed to change to application directory"
   exit 1
 }
-
 asdf plugin add erlang || true
 asdf plugin add elixir || true
-asdf install
+timeout 600 asdf install
+asdf current
+
+for cmd in erl elixir mix; do
+  command -v "$cmd" >/dev/null || {
+    echo "Error: $cmd not found"
+    exit 1
+  }
+done
+
 asdf current
 elixir -v || {
   echo "Elixir via asdf não está ativo"
   exit 1
 }
+check_timeout
 
 # Install rebar3 with timeout
 timeout 60 bash -c '
