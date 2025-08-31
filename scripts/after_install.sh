@@ -77,15 +77,7 @@ asdf exec elixir -v || {
 }
 check_timeout
 
-# Install rebar3 with timeout
-timeout 60 bash -c '
-    wget https://s3.amazonaws.com/rebar3/rebar3 &&
-    chmod +x rebar3 &&
-    sudo mv rebar3 /usr/local/bin/
-' || {
-  echo "Failed to install rebar3"
-  exit 1
-}
+## TODO PUT A REBAR FROM ASDF
 
 # Verify rebar3
 if ! asdf exec rebar3 --version; then
