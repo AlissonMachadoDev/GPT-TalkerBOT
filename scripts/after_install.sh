@@ -76,7 +76,7 @@ cd /opt/gpt_talkerbot || {
 }
 asdf plugin add erlang || true
 asdf plugin add elixir || true
-timeout 600 asdf install
+asdf install
 asdf current
 
 for cmd in erl elixir mix; do
