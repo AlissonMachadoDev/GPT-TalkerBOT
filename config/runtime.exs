@@ -58,8 +58,8 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "gpt-talkerbot.alissonmachado.dev"
-  port = String.to_integer(System.get_env("PORT") || "4004")
+  host = "gpt-talkerbot.alissonmachado.dev"
+  port = "4004"
 
   config :gpt_talkerbot, GptTalkerbotWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
