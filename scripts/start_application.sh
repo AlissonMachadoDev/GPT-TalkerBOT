@@ -8,6 +8,7 @@ KEY_BASE=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/secret_key_base" --
 ALLOWED_GROUPS=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/allowed_groups" --with-decryption --query Parameter.Value --output text)
 OPENAI_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/openai_api_key" --with-decryption --query Parameter.Value --output text)
 DEFAULT_PROMPT=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/default_prompt" --with-decryption --query Parameter.Value --output text)
+TELEGRAM_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/telegram_api_key" --with-decryption --query Parameter.Value --output text)
 
 echo "Setting up directory permissions..."
 sudo mkdir -p /opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/tmp
@@ -38,6 +39,7 @@ Environment=SECRET_KEY_BASE=${KEY_BASE}
 Environment=ALLOWED_GROUPS=${ALLOWED_GROUPS}
 Environment=OPENAI_API_KEY=${OPENAI_API_KEY}
 Environment=DEFAULT_PROMPT=${DEFAULT_PROMPT}
+Environment=TELEGRAM_API_KEY=${TELEGRAM_API_KEY}
 
 ExecStart=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot start
 ExecStop=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot stop
