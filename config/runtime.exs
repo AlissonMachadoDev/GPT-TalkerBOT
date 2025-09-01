@@ -59,7 +59,7 @@ if config_env() == :prod do
       """
 
   host = System.get_env("PHX_HOST") || "gpt-talkerbot.alissonmachado.dev"
-  port = String.to_integer(System.get_env("PORT") || "40004")
+  port = String.to_integer(System.get_env("PORT") || "4004")
 
   config :gpt_talkerbot, GptTalkerbotWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
