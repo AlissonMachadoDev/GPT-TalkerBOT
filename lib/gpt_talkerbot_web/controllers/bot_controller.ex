@@ -12,8 +12,8 @@ defmodule GptTalkerbotWeb.BotController do
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
 
-  @allowed_users Application.get_env(:gpt_talkerbot, :allowed_users)
-  @allowed_groups Application.get_env(:gpt_talkerbot, :allowed_groups)
+  defp allowed_users, do: Application.get_env(:gpt_talkerbot, :allowed_users, [])
+  defp allowed_groups, do: Application.get_env(:gpt_talkerbot, :allowed_groups, [])
 
   def receive(
         conn,

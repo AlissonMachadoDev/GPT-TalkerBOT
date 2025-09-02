@@ -1,6 +1,6 @@
 defmodule GptTalkerbotWeb.Services.OpenAI do
   use Tesla
-  @default_prompt Application.get_env(:gpt_talkerbot, :default_prompt)
+  defp default_prompt, do: Application.get_env(:gpt_talkerbot, :default_prompt, "")
 
   @doc """
   Creates a client to make the OpenAI requests.

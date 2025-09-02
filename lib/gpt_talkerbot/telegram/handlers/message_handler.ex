@@ -8,7 +8,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Access
 
   @behaviour GptTalkerbot.Telegram.Handlers
-  @api_key Application.get_env(:gpt_talkerbot, :openai_api_key)
+  def api_key, do: Application.get_env(:gpt_talkerbot, :openai_api_key, "")
 
   @impl true
   def handle(%Message{
@@ -46,7 +46,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         text: text,
         from: %{telegram_id: user_id}
       }) do
-    process_gpt_message(@api_key, text, chat_id, user_id)
+    process_gpt_message(api_key(), text, chat_id, user_id)
   end
 
   defp process_gpt_message(api_key, text, chat_id, user_id) do

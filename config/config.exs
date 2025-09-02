@@ -48,25 +48,6 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-parse_env_list = fn env_var ->
-  System.get_env(env_var, "")
-  |> String.split(",")
-  |> Enum.map(&String.trim/1)
-  |> Enum.reject(&(&1 == ""))
-  |> Enum.reduce([], fn str, acc ->
-    case Integer.parse(str) do
-      {int, ""} -> [int | acc]
-      _ -> acc
-    end
-  end)
-  |> Enum.reverse()
-end
-
-config :gpt_talkerbot, :allowed_users, parse_env_list.("ALLOWED_USERS")
-config :gpt_talkerbot, :allowed_groups, parse_env_list.("ALLOWED_GROUPS")
-config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
-config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
-config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

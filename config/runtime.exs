@@ -39,12 +39,13 @@ if config_env() == :prod do
     timeout: 60_000,
     migration_timeout: 120_000,
     socket_options: maybe_ipv6
-    # ssl_opts: [
-    #   verify: :verify_peer,
-    #   cacertfile: "/etc/ssl/certs/rds-ca-global.pem",
-    #   server_name_indication: String.to_charlist(URI.parse(database_url).host || ""),
-    #   versions: [:"tlsv1.2", :"tlsv1.3"]
-    # ]
+
+  # ssl_opts: [
+  #   verify: :verify_peer,
+  #   cacertfile: "/etc/ssl/certs/rds-ca-global.pem",
+  #   server_name_indication: String.to_charlist(URI.parse(database_url).host || ""),
+  #   versions: [:"tlsv1.2", :"tlsv1.3"]
+  # ]
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
@@ -72,6 +73,26 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base
+
+  parse_env_list = fn env_var ->
+    System.get_env(env_var, "")
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.reduce([], fn str, acc ->
+      case Integer.parse(str) do
+        {int, ""} -> [int | acc]
+        _ -> acc
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  config :gpt_talkerbot, :allowed_users, parse_env_list.("ALLOWED_USERS")
+  config :gpt_talkerbot, :allowed_groups, parse_env_list.("ALLOWED_GROUPS")
+  config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
+  config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
+  config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
 
   # ## Configuring the mailer
   #
