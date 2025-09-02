@@ -37,6 +37,14 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     end
   end
 
+  def set_maintenance_mode() do
+    get("/setWebhook?url=https://example.com&drop_pending_updates=true")
+  end
+
+  def set_production_mode() do
+    server =  Application.get_env(:gpt_talkerbot, :server_host, "")
+    get("/setWebhook?url=#{server}&drop_pending_updates=true")
+  end
 
   defp telegram_api_key, do: Application.get_env(:gpt_talkerbot, :telegram_api_key, "")
 end
