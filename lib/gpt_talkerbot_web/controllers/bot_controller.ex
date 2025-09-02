@@ -25,9 +25,12 @@ defmodule GptTalkerbotWeb.BotController do
               "from" => %{"id" => user_id}
             } = message
         } = _params
-      )
-      when user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups() do
-    handle_bot(conn, message)
+      ) do
+    if is_allowed?(user_id, chat_id) do
+      handle_bot(conn, message)
+    else
+      send_resp(conn, 204, "")
+    end
   end
 
   def receive(
@@ -40,9 +43,12 @@ defmodule GptTalkerbotWeb.BotController do
               "from" => %{"id" => user_id}
             } = message
         } = _params
-      )
-      when user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups() do
-    handle_bot(conn, message)
+      ) do
+    if is_allowed?(user_id, chat_id) do
+      handle_bot(conn, message)
+    else
+      send_resp(conn, 204, "")
+    end
   end
 
   def receive(
@@ -125,5 +131,9 @@ defmodule GptTalkerbotWeb.BotController do
       _ ->
         send_resp(conn, 204, "")
     end
+  end
+
+  defp is_allowed?(user_id, chat_id) do
+    user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups()
   end
 end
