@@ -54,8 +54,4 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
       max_tokens: 2300
     }
   end
-
-  defp default_prompt() do
-    @default_prompt
-  end
 end

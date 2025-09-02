@@ -10,7 +10,7 @@ defmodule GptTalkerbotWeb.Services.Telegram do
   # defp token, do: Application.get_env(:my_scrobbles_bot, __MODULE__)[:token]
 
   plug Tesla.Middleware.BaseUrl,
-       "https://api.telegram.org/bot#{Application.fetch_env!(:gpt_talkerbot, :telegram_api_key)}"
+       "https://api.telegram.org/bot#{telegram_api_key()}"
 
   plug Tesla.Middleware.Headers
   plug Tesla.Middleware.JSON
@@ -36,4 +36,7 @@ defmodule GptTalkerbotWeb.Services.Telegram do
       fun.(route, input)
     end
   end
+
+
+  defp telegram_api_key, do: Application.get_env(:gpt_talkerbot, :telegram_api_key, "")
 end

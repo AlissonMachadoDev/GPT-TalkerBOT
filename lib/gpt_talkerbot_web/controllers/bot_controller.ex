@@ -26,7 +26,7 @@ defmodule GptTalkerbotWeb.BotController do
             } = message
         } = _params
       )
-      when user_id in @allowed_users or @allowed_users == [] or chat_id in @allowed_groups do
+      when user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups() do
     handle_bot(conn, message)
   end
 
@@ -41,7 +41,7 @@ defmodule GptTalkerbotWeb.BotController do
             } = message
         } = _params
       )
-      when user_id in @allowed_users or @allowed_users == [] or chat_id in @allowed_groups do
+      when user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups() do
     handle_bot(conn, message)
   end
 
