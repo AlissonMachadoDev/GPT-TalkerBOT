@@ -95,6 +95,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   defp send_message(text, %{chat_id: chat_id, message_id: message_id}) do
-    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message: message_id})
+    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id})
   end
 end
