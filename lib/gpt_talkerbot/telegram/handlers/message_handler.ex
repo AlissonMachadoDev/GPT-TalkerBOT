@@ -11,55 +11,79 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   def api_key, do: Application.get_env(:gpt_talkerbot, :openai_api_key, "")
 
   @impl true
-  def handle(%Message{
-        chat_id: chat_id,
-        text: text,
-        chat_type: "private_temp",
-        from: %{telegram_id: user_id}
-      }) do
+  def handle(
+        %Message{
+          text: text,
+          chat_type: "private_temp",
+          from: %{telegram_id: user_id}
+        } = message
+      ) do
     with user <- Access.get_user_by_telegram_id!(user_id),
          {:ok, api_key} <- Access.get_key_for_user(user) do
-      process_gpt_message(api_key, text, chat_id, user_id)
+      process_gpt_message(api_key, text, user_id)
+      |> case do
+        {:ok, response} ->
+          handle_gpt_response(response)
+          |> send_message(message)
+
+        {:error, _} ->
+          send_message("Erro ao processar mensagem", message)
+      end
     else
-      {:error, :no_access} -> send_message(chat_id, "Você não tem acesso ao bot")
-      _ -> send_message(chat_id, "Ocorreu um erro")
+      {:error, :no_access} -> send_message("Você não tem acesso ao bot", message)
+      _ -> send_message("Ocorreu um erro", message)
     end
   end
 
-  def handle(%Message{
-        chat_id: chat_id,
-        text: text,
-        chat_type: group,
-        from: %{telegram_id: user_id}
-      })
+  def handle(
+        %Message{
+          chat_id: chat_id,
+          text: text,
+          chat_type: group,
+          from: %{telegram_id: user_id}
+        } = message
+      )
       when group in ["group_temp", "supergroup_temp"] do
     with {:ok, api_key} <- Access.get_key_for_group(chat_id) do
-      process_gpt_message(api_key, text, chat_id, user_id)
+      process_gpt_message(api_key, text, user_id)
+      |> case do
+        {:ok, response} ->
+          handle_gpt_response(response)
+          |> send_message(message)
+
+        {:error, _} ->
+          send_message("Erro ao processar mensagem", message)
+      end
     else
-      {:error, :group_not_registered} -> send_message(chat_id, "Grupo não registrado")
-      _ -> send_message(chat_id, "Ocorreu um erro")
+      {:error, :group_not_registered} -> send_message("Grupo não registrado", message)
+      _ -> send_message("Ocorreu um erro", message)
     end
   end
 
-  def handle(%Message{
-        chat_id: chat_id,
-        text: text,
-        from: %{telegram_id: user_id}
-      }) do
-    process_gpt_message(api_key(), text, chat_id, user_id)
+  def handle(
+        %Message{
+          text: text,
+          from: %{telegram_id: user_id}
+        } = message
+      ) do
+    process_gpt_message(api_key(), text, user_id)
+    |> case do
+      {:ok, response} ->
+        handle_gpt_response(response)
+        |> send_message(message)
+
+      {:error, _} ->
+        send_message("Erro ao processar mensagem", message)
+    end
   end
 
-  defp process_gpt_message(api_key, text, chat_id, user_id) do
+  defp process_gpt_message(api_key, text, user_id) do
     api_key
     |> OpenAI.new()
     |> OpenAI.gpt_completion(text, user_id)
-    |> case do
-      {:ok, response} -> handle_gpt_response(response, chat_id)
-      {:error, _} -> send_message(chat_id, "Erro ao processar mensagem")
-    end
   end
 
-  defp handle_gpt_response(response, chat_id) do
+  defp handle_gpt_response(response) do
     response
     |> Map.get("choices")
     |> List.first()
@@ -67,10 +91,10 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     |> Map.get("content")
     |> String.split_at(3500)
     |> Tuple.to_list()
-    |> Enum.each(&send_message(chat_id, &1))
+    |> List.first()
   end
 
-  defp send_message(chat_id, text) do
-    Telegram.send_message(%{chat_id: chat_id, text: text})
+  defp send_message(text, %{chat_id: chat_id, message_id: message_id}) do
+    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message: message_id})
   end
 end

@@ -46,5 +46,10 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     get("/setWebhook?url=#{server}&drop_pending_updates=true")
   end
 
+
+  def get_webhook_info() do
+    get("/getWebhookInfo")
+  end
+
   defp telegram_api_key, do: Application.get_env(:gpt_talkerbot, :telegram_api_key, "")
 end
