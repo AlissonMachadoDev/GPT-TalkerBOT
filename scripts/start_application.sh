@@ -28,18 +28,18 @@ Group=ubuntu
 WorkingDirectory=/opt/gpt_talkerbot
 
 # Application environment variables
-Environment=PORT=4004
-Environment=MIX_ENV=prod
-Environment=PHX_HOST=gpt-talkerbot.alissonmachado.dev
-Environment=PHX_SERVER=true
-Environment=POOL_SIZE=10
-Environment=RELEASE_NAME=gpt_talkerbot
-Environment=DATABASE_URL=${DB_URL}
-Environment=SECRET_KEY_BASE=${KEY_BASE}
-Environment=ALLOWED_GROUPS=${ALLOWED_GROUPS}
-Environment=OPENAI_API_KEY=${OPENAI_API_KEY}
-Environment=DEFAULT_PROMPT=${DEFAULT_PROMPT}
-Environment=TELEGRAM_API_KEY=${TELEGRAM_API_KEY}
+Environment="PORT=4004"
+Environment="MIX_ENV=prod"
+Environment="PHX_HOST=gpt-talkerbot.alissonmachado.dev"
+Environment="PHX_SERVER=true"
+Environment="POOL_SIZE=10"
+Environment="RELEASE_NAME=gpt_talkerbot"
+Environment="DATABASE_URL=${DB_URL}"
+Environment="SECRET_KEY_BASE=${KEY_BASE}"
+Environment="ALLOWED_GROUPS=${ALLOWED_GROUPS}"
+Environment="OPENAI_API_KEY=${OPENAI_API_KEY}"
+Environment="DEFAULT_PROMPT=${DEFAULT_PROMPT}"
+Environment="TELEGRAM_API_KEY=${TELEGRAM_API_KEY}"
 
 ExecStart=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot start
 ExecStop=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot stop
