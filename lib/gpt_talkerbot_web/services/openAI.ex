@@ -40,8 +40,8 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
     [%{role: "user", content: "user #{user}: #{text}"}]
   end
 
-  defp build_messages(prompt, text) do
-    [%{role: "system", content: prompt}, %{role: "user", content: text}]
+  defp build_messages(prompt, text, user) do
+    [%{role: "system", content: prompt}, %{role: "user", content: "user #{user}: #{text}"}]
   end
 
   defp default_settings() do
