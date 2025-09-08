@@ -19,10 +19,12 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
   @doc """
     Creates a gpt completion, sending user messages to get a text based on it.
   """
-  def gpt_completion(client, text, user, settings \\ default_settings()) do
+  def gpt_completion(client, user, messages, settings \\ default_settings()) do
+    final_messages = build_messages(settings[:prompt], messages)
+
     Tesla.post(client, "/chat/completions", %{
       "model" => "chatgpt-4o-latest",
-      "messages" => build_messages(settings[:prompt], text, user),
+      "messages" => final_messages,
       "temperature" => settings[:temperature],
       "top_p" => settings[:top_p],
       "frequency_penalty" => settings[:frequency_penalty],
@@ -36,12 +38,10 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
   defp handle_response({:ok, %{status: 200, body: body}}), do: {:ok, body}
   defp handle_response(_), do: {:error, "Erro ao chamar GPT"}
 
-  defp build_messages(prompt, text, user) when prompt in [nil, ""] do
-    [%{role: "user", content: "user #{user}: #{text}"}]
-  end
+  defp build_messages(prompt, messages) when prompt in [nil, ""], do: messages
 
-  defp build_messages(prompt, text, user) do
-    [%{role: "system", content: prompt}, %{role: "user", content: "user #{user}: #{text}"}]
+  defp build_messages(prompt, messages) do
+    [%{role: "system", content: prompt} | messages]
   end
 
   defp default_settings() do
