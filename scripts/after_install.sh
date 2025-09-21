@@ -17,21 +17,19 @@ check_timeout() {
   fi
 }
 
-setup_environment() {
-  export HOME="/home/ubuntu"
-  export MIX_ENV=prod
-  export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
+export HOME="/home/ubuntu"
+export MIX_ENV=prod
+export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
 
-  if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
-    echo "FATAL: asdf.sh not found"
-    exit 1
-  fi
+if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
+  echo "FATAL: asdf.sh not found"
+  exit 1
+fi
 
-  source "$HOME/.asdf/asdf.sh"
-  cd "$APP_DIR" || {
-    echo "FATAL: Cannot cd to $APP_DIR"
-    exit 1
-  }
+source "$HOME/.asdf/asdf.sh"
+cd "$APP_DIR" || {
+  echo "FATAL: Cannot cd to $APP_DIR"
+  exit 1
 }
 
 # Install hex and rebar with timeout
