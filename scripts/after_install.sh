@@ -19,6 +19,7 @@ check_timeout() {
 
 export HOME="/home/ubuntu"
 export MIX_ENV=prod
+export APP_DIR="/opt/gpt_talkerbot"
 export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
 
 if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
