@@ -20,14 +20,8 @@ defmodule GptTalkerbot.Application do
       GptTalkerbotWeb.Endpoint,
       # Start a worker by calling: GptTalkerbot.Worker.start_link(arg)
       # {GptTalkerbot.Worker, arg}
-      %{
-        id: RMQPublisher,
-        start: {
-          RMQPublisher,
-          :start_link,
-          []
-        }
-      },
+
+      GptTalkerbot.RMQPublisher,
       GptTalkerbot.BotProcessor
     ]
 

@@ -17,73 +17,22 @@ check_timeout() {
   fi
 }
 
-# Export environment variables with error checking
-export HOME="/home/ubuntu"
-export MIX_ENV=prod
-export PATH="$HOME/.asdf/shims:$HOME/.asdf/bin:$PATH"
-export ASDF_DATA_DIR="$HOME/.asdf"
-export ASDF_DIR="$HOME/.asdf"
-if [ -f "$HOME/.asdf/asdf.sh" ]; then
-  . "$HOME/.asdf/asdf.sh"
-else
-  echo "Error: asdf.sh not found"
-  exit 1
-fi
+setup_environment() {
+  export HOME="/home/ubuntu"
+  export MIX_ENV=prod
+  export PATH="$HOME/.asdf/bin:$HOME/.asdf/shims:$PATH"
 
-echo "Installing Erlang build dependencies..."
-sudo apt-get update -qq
-sudo apt-get install -y build-essential autoconf m4 libncurses5-dev libssl-dev
+  if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
+    echo "FATAL: asdf.sh not found"
+    exit 1
+  fi
 
-cd /opt/gpt_talkerbot || {
-  echo "Failed to change to application directory"
-  exit 1
-}
-asdf plugin add erlang || true
-asdf plugin add elixir || true
-
-echo "Installing Erlang 25.3 (may take 10-15 minutes)..."
-if ! asdf install erlang 25.3; then
-  echo "FAILED to install Erlang 25.3"
-  echo "Build logs:"
-  cat ~/.asdf/plugins/erlang/logs/erlang-25.3.log 2>/dev/null || echo "No logs found"
-  exit 1
-fi
-
-echo "Installing Elixir 1.14.0-otp-25..."
-if ! asdf install elixir 1.14.0-otp-25; then
-  echo "FAILED to install Elixir 1.14.0-otp-25"
-  exit 1
-fi
-
-asdf reshim erlang
-asdf reshim elixir
-asdf current
-
-for cmd in erl elixir mix; do
-  command -v "$cmd" >/dev/null || {
-    echo "Error: $cmd not found"
+  source "$HOME/.asdf/asdf.sh"
+  cd "$APP_DIR" || {
+    echo "FATAL: Cannot cd to $APP_DIR"
     exit 1
   }
-done
-
-asdf current
-echo "which erl: $(command -v erl)"
-echo "which elixir: $(command -v elixir)"
-asdf which erl || true
-asdf which elixir || true
-asdf exec elixir -v || {
-  echo "Elixir via asdf não está ativo"
-  exit 1
 }
-check_timeout
-
-## TODO PUT A REBAR FROM ASDF
-
-# Verify rebar3
-if ! asdf exec rebar3 --version; then
-  echo "rebar3 installation verification failed"
-  exit 1
-fi
 
 # Install hex and rebar with timeout
 echo "Installing hex and rebar..."

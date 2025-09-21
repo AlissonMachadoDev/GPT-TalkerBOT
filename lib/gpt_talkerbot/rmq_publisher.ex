@@ -5,46 +5,54 @@ defmodule GptTalkerbot.RMQPublisher do
   """
   alias __MODULE__
   require Logger
-  @behaviour GenRMQ.Publisher
+  use GenServer
 
   @rmq_uri "amqp://rabbitmq:rabbitmq@localhost:5672"
   @bot_exchange "bot_analytics"
   @messages_queue "bot_messages"
 
-  def start_link() do
-    GenRMQ.Publisher.start_link(RMQPublisher, name: RMQPublisher)
+  def start_link(_opts) do
+    GenServer.start_link(RMQPublisher, nil, name: RMQPublisher)
   end
 
   def publish_message(message) do
+    GenServer.call(RMQPublisher, {:publish, message})
+  end
+
+  @impl true
+  def init(_) do
+    {:ok, conn} = AMQP.Connection.open(@rmq_uri)
+    {:ok, channel} = AMQP.Channel.open(conn)
+
+    setup_topology(channel)
+
+    {:ok, %{conn: conn, channel: channel}}
+  end
+
+  def handle_call({:publish, message}, _from, state) do
     message_json = Jason.encode!(%{message: message})
-    GenRMQ.Publisher.publish(RMQPublisher, message_json, @messages_queue)
+
+    result =
+      AMQP.Basic.publish(
+        state.channel,
+        @bot_exchange,
+        @messages_queue,
+        message_json,
+        persistent: true
+      )
+
+    {:reply, result, state}
   end
 
-  def init do
-    create_rmq_resources()
-
-    [
-      connection: @rmq_uri,
-      exchange: @bot_exchange
-    ]
+  @impl true
+  def terminate(_reason, state) do
+    AMQP.Channel.close(state.channel)
+    AMQP.Connection.close(state.conn)
   end
 
-  def create_rmq_resources do
-    # Setup RabbitMQ connection
-    {:ok, connection} = AMQP.Connection.open(@rmq_uri)
-    {:ok, channel} = AMQP.Channel.open(connection)
-
-    # Create exchange
+  defp setup_topology(channel) do
     AMQP.Exchange.declare(channel, @bot_exchange, :topic, durable: true)
-
-    # Create queues
     AMQP.Queue.declare(channel, @messages_queue, durable: true)
-
-    # Bind queues to exchange
     AMQP.Queue.bind(channel, @messages_queue, @bot_exchange, routing_key: @messages_queue)
-
-    # Close the channel as it is no longer needed
-    # GenRMQ will manage its own channel
-    AMQP.Channel.close(channel)
   end
 end
