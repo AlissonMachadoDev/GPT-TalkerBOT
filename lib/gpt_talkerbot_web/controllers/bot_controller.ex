@@ -211,6 +211,11 @@ defmodule GptTalkerbotWeb.BotController do
     end
   end
 
+  defp is_admin_allowed?(owner_id, _) when is_integer(owner_id) do
+    is_admin_allowed?(Integer.to_string(owner_id), nil)
+  end
+
+
   defp is_admin_allowed?(owner_id, _) do
     owner_id == owner_id()
   end
