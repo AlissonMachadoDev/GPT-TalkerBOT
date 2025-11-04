@@ -91,6 +91,8 @@ if config_env() == :prod do
   config :gpt_talkerbot, :allowed_users, parse_env_list.("ALLOWED_USERS")
   config :gpt_talkerbot, :allowed_groups, parse_env_list.("ALLOWED_GROUPS")
   config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
+  config :gpt_talkerbot, :grok_api_key, System.get_env("GROK_API_KEY", "")
+  config :gpt_talkerbot, :owner_id, System.get_env("OWNER_ID", "")
   config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
   config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
   config :gpt_talkerbot, :server_host, System.get_env("SERVER_HOST", "")

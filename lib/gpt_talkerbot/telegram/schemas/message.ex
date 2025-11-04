@@ -27,6 +27,7 @@ defmodule GptTalkerbot.Telegram.Message do
       field :chat_type, :string
       field :chat_first_name, :string
       field :message_id, :string
+      field :caption, :string
       field :text, :string
       embeds_one :from, From
     end
@@ -38,6 +39,7 @@ defmodule GptTalkerbot.Telegram.Message do
     field :chat_id, :string
     field :chat_type, :string
     field :text, :string
+    field :caption, :string
 
     embeds_one :from, From
     embeds_one :reply_to_message, ReplyToMessage
@@ -54,7 +56,7 @@ defmodule GptTalkerbot.Telegram.Message do
 
   defp reply_to_message_changeset(schema, params) do
     schema
-    |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name])
+    |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name, :caption])
     |> put_fields(params)
     |> Changeset.cast_embed(:from, with: &from_changeset/2)
   end

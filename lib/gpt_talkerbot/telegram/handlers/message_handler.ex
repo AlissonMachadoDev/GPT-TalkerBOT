@@ -4,11 +4,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   """
 
   alias GptTalkerbot.Telegram.Message
-  alias GptTalkerbotWeb.Services.{Telegram, OpenAI}
+  alias GptTalkerbotWeb.Services.{Grok, OpenAI, Telegram}
   alias GptTalkerbot.Access
+  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
   @behaviour GptTalkerbot.Telegram.Handlers
-  def api_key, do: Application.get_env(:gpt_talkerbot, :openai_api_key, "")
 
   @impl true
   def handle(
@@ -20,7 +20,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       ) do
     with user <- Access.get_user_by_telegram_id!(user_id),
          {:ok, api_key} <- Access.get_key_for_user(user) do
-      process_gpt_message(api_key, user_id, []) # TODO: NEED TO BE REFACTORED
+      # TODO: NEED TO BE REFACTORED
+      process_gpt_message(api_key, user_id, [])
       |> case do
         {:ok, response} ->
           handle_gpt_response(response)
@@ -45,7 +46,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       )
       when group in ["group_temp", "supergroup_temp"] do
     with {:ok, api_key} <- Access.get_key_for_group(chat_id) do
-      process_gpt_message(api_key, user_id, []) # TODO: NEED TO BE REFACTORED
+      # TODO: NEED TO BE REFACTORED
+      process_gpt_message(api_key, user_id, [])
       |> case do
         {:ok, response} ->
           handle_gpt_response(response)
@@ -63,12 +65,21 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   def handle(
         %Message{
           text: text,
-          from: %{telegram_id: user_id},
-          reply_to_message: %{text: reply_text, from: %{telegram_id: reply_user_id}}
+          from: %{telegram_id: user_id, first_name: name},
+          reply_to_message:
+            %{
+              from: %{telegram_id: reply_user_id, first_name: reply_name}
+            } = reply_to_message
         } = message
       ) do
-    with messages <- build_messages([%{user: reply_user_id,  text: reply_text}, %{user: user_id, text: text}]),
-         {:ok, response} <- process_gpt_message(api_key(), user_id, messages) do
+    reply_text = reply_to_message.caption || reply_to_message.text
+
+    with messages <-
+           build_messages([
+             %{user: "user_name: #{reply_name}, user_id: #{reply_user_id}", text: reply_text},
+             %{user: "user_name: #{name}, user_id: #{user_id}", text: text}
+           ]),
+         {:ok, response} <- process_ai_message(user_id, messages) do
       handle_gpt_response(response)
       |> send_message(message)
     else
@@ -77,20 +88,32 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-
   def handle(
         %Message{
           text: text,
-          from: %{telegram_id: user_id}
+          from: %{telegram_id: user_id, first_name: name}
         } = message
       ) do
-    with messages <- build_messages(%{user: user_id, text: text}),
-         {:ok, response} <- process_gpt_message(api_key(), user_id, messages) do
+    with messages <-
+           build_messages(%{user: "user_name: #{name}, user_id: #{user_id}", text: text}),
+         {:ok, response} <- process_ai_message(user_id, messages) do
       handle_gpt_response(response)
       |> send_message(message)
     else
       {:error, _} ->
         send_message("Erro ao processar mensagem", message)
+    end
+  end
+
+  def process_ai_message(user_id, messages) do
+    case IO.inspect(RuntimeEnvs.get_current_service(), label: "the ai service is") do
+      :openai ->
+        openai_api_key = RuntimeEnvs.get_openai_api_key()
+        process_gpt_message(openai_api_key, user_id, messages)
+
+      :grok ->
+        grok_api_key = RuntimeEnvs.get_grok_api_key()
+        process_grok_message(grok_api_key, user_id, messages)
     end
   end
 
@@ -98,6 +121,12 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     api_key
     |> OpenAI.new()
     |> OpenAI.gpt_completion(user_id, messages)
+  end
+
+  defp process_grok_message(api_key, user_id, messages) do
+    api_key
+    |> Grok.new()
+    |> Grok.grok_completion(user_id, messages)
   end
 
   defp handle_gpt_response(response) do
@@ -115,7 +144,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id})
   end
 
-
   def build_messages(%{user: user, text: text}) do
     [build_message(text, user)]
   end
@@ -126,6 +154,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   defp build_message(text, user) do
-    %{role: "user", content: "user #{user}: #{text}"}
+    %{role: "user", content: "#{user}, message: #{text}"}
   end
 end

@@ -7,6 +7,8 @@ DB_URL=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/database_url" --with-
 KEY_BASE=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/secret_key_base" --with-decryption --query Parameter.Value --output text)
 ALLOWED_GROUPS=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/allowed_groups" --with-decryption --query Parameter.Value --output text)
 OPENAI_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/openai_api_key" --with-decryption --query Parameter.Value --output text)
+GROK_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/grok_api_key" --with-decryption --query Parameter.Value --output text)
+OWNER_ID=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/owner_id" --with-decryption --query Parameter.Value --output text)
 DEFAULT_PROMPT=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/default_prompt" --with-decryption --query Parameter.Value --output text)
 TELEGRAM_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/telegram_api_key" --with-decryption --query Parameter.Value --output text)
 SERVER_HOST=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/server_host" --with-decryption --query Parameter.Value --output text)
@@ -39,6 +41,8 @@ Environment="DATABASE_URL=${DB_URL}"
 Environment="SECRET_KEY_BASE=${KEY_BASE}"
 Environment="ALLOWED_GROUPS=${ALLOWED_GROUPS}"
 Environment="OPENAI_API_KEY=${OPENAI_API_KEY}"
+Environment="GROK_API_KEY=${GROK_API_KEY}"
+Environment="OWNER_ID=${OWNER_ID}"
 Environment="DEFAULT_PROMPT=${DEFAULT_PROMPT}"
 Environment="TELEGRAM_API_KEY=${TELEGRAM_API_KEY}"
 Environment="SERVER_HOST=${SERVER_HOST}"
