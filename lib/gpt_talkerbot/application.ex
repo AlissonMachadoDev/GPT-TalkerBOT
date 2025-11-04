@@ -22,7 +22,8 @@ defmodule GptTalkerbot.Application do
       # {GptTalkerbot.Worker, arg}
 
       GptTalkerbot.RMQPublisher,
-      GptTalkerbot.BotProcessor
+      GptTalkerbot.BotProcessor,
+      GptTalkerbot.RuntimeEnvs.GenServer
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

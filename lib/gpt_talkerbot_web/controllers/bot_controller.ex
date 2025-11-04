@@ -8,12 +8,81 @@ defmodule GptTalkerbotWeb.BotController do
   alias GptTalkerbot.Commands
   alias BotController.Administrator
   alias GptTalkerbot.Commands
+  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+
+  defp owner_id, do: Application.get_env(:gpt_talkerbot, :owner_id, "")
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
 
   defp allowed_users, do: Application.get_env(:gpt_talkerbot, :allowed_users, [])
   defp allowed_groups, do: Application.get_env(:gpt_talkerbot, :allowed_groups, [])
+
+  def receive(
+        conn,
+        %{
+          "message" =>
+            %{
+              "chat" => %{"id" => chat_id},
+              "text" => "/setproduction",
+              "from" => %{"id" => user_id}
+            } = _message
+        } = _params
+      ) do
+    if is_admin_allowed?(user_id, chat_id) do
+      GptTalkerbotWeb.Services.Telegram.set_production_mode()
+      send_resp(conn, 204, "")
+    else
+      send_resp(conn, 204, "")
+    end
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" =>
+            %{
+              "chat" => %{"id" => chat_id},
+              "text" => "/setgrok",
+              "from" => %{"id" => user_id}
+            } = _message
+        } = _params
+      ) do
+    if is_admin_allowed?(user_id, chat_id) do
+      RuntimeEnvs.set_current_service(:grok)
+      send_resp(conn, 204, "")
+    else
+      send_resp(conn, 204, "")
+    end
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" =>
+            %{
+              "chat" => %{"id" => chat_id},
+              "text" => "/setopenai",
+              "from" => %{"id" => user_id}
+            } = _message
+        } = _params
+      ) do
+    if is_admin_allowed?(user_id, chat_id) do
+      RuntimeEnvs.set_current_service(:openai)
+      send_resp(conn, 204, "")
+    else
+      send_resp(conn, 204, "")
+    end
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
+  end
 
   def receive(
         conn,
@@ -31,6 +100,9 @@ defmodule GptTalkerbotWeb.BotController do
     else
       send_resp(conn, 204, "")
     end
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -49,6 +121,9 @@ defmodule GptTalkerbotWeb.BotController do
     else
       send_resp(conn, 204, "")
     end
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -82,6 +157,9 @@ defmodule GptTalkerbotWeb.BotController do
     end
 
     send_resp(conn, 204, "")
+  rescue
+    _ ->
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -133,7 +211,11 @@ defmodule GptTalkerbotWeb.BotController do
     end
   end
 
+  defp is_admin_allowed?(owner_id, _) do
+    owner_id == owner_id()
+  end
+
   defp is_allowed?(user_id, chat_id) do
-    user_id in allowed_groups() or allowed_groups() == [] or chat_id in allowed_groups()
+    user_id in allowed_users() or allowed_groups() == [] or chat_id in allowed_groups()
   end
 end
