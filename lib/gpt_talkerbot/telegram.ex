@@ -35,16 +35,35 @@ defmodule GptTalkerbot.Telegram do
     RMQPublisher.publish_message(m)
   end
 
-  defp format_params(%{"from" => %{"username" => "Channel_Bot"}} = message) do
+  defp format_params(message) do
+    message
+    |> format_channel_from()
+    |> format_channel_reply_to_message()
+  end
+
+  defp format_channel_from(%{"from" => %{"username" => "Channel_Bot"}} = message) do
     name = message["sender_chat"]["title"] || "Channel Bot"
     id = message["sender_chat"]["id"] || message["from"]["id"]
-    from = Map.put(message["from"], "first_name", name)
+    from = message["from"]
+    |> Map.put("first_name", name)
     |> Map.put("id", id)
     |> Map.put("username", "formatted_channel_bot")
 
-    message
-    |> Map.put("from", from)
+    Map.put(message, "from", from)
   end
 
-  defp format_params(params), do: params
+  defp format_channel_from(message), do: message
+
+  defp format_channel_reply_to_message(%{"reply_to_message" => %{"from" => %{"username" => "Channel_Bot"}} = reply} = message) do
+    name = reply["sender_chat"]["title"] || "Channel Bot"
+    id = reply["sender_chat"]["id"] || reply["from"]["id"]
+    from = reply["from"]
+    |> Map.put("first_name", name)
+    |> Map.put("id", id)
+    |> Map.put("username", "formatted_channel_bot")
+
+    Map.put(message, "reply_to_message", Map.put(reply, "from", from))
+  end
+
+  defp format_channel_reply_to_message(message), do: message
 end
