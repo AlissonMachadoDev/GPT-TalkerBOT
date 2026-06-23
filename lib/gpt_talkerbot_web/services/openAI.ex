@@ -23,13 +23,13 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
     final_messages = build_messages(settings[:prompt], messages)
 
     Tesla.post(client, "/chat/completions", %{
-      "model" => "chatgpt-4o-latest",
+      "model" => "gpt-5.4-mini",
       "messages" => final_messages,
       "temperature" => settings[:temperature],
       "top_p" => settings[:top_p],
       "frequency_penalty" => settings[:frequency_penalty],
       "presence_penalty" => settings[:presence_penalty],
-      "max_tokens" => 2300,
+      "max_completion_tokens" => 2300,
       "user" => user
     })
     |> handle_response()
@@ -51,7 +51,7 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
       top_p: 0.9,
       frequency_penalty: 0.2,
       presence_penalty: 0.4,
-      max_tokens: 2300
+      max_completion_tokens: 2300
     }
   end
 end
