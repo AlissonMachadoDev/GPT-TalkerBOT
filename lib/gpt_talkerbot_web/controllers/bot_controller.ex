@@ -3,200 +3,116 @@ defmodule GptTalkerbotWeb.BotController do
   use GptTalkerbotWeb, :controller
 
   require Logger
-  alias GptTalkerbot.Telegram
-  alias GptTalkerbot.Access
-  alias GptTalkerbot.Commands
+  alias GptTalkerbot.{Telegram, Access}
   alias BotController.Administrator
-  alias GptTalkerbot.Commands
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
+  @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
+
   defp owner_id, do: Application.get_env(:gpt_talkerbot, :owner_id, "")
+  defp allowed_users, do: Application.get_env(:gpt_talkerbot, :allowed_users, [])
+  defp allowed_groups, do: Application.get_env(:gpt_talkerbot, :allowed_groups, [])
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
 
-  defp allowed_users, do: Application.get_env(:gpt_talkerbot, :allowed_users, [])
-  defp allowed_groups, do: Application.get_env(:gpt_talkerbot, :allowed_groups, [])
-
   def receive(
         conn,
         %{
-          "message" =>
-            %{
-              "chat" => %{"id" => chat_id},
-              "text" => "/setproduction",
-              "from" => %{"id" => user_id}
-            } = _message
-        } = _params
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "text" => "/setproduction",
+            "from" => %{"id" => user_id}
+          }
+        }
       ) do
-    if is_admin_allowed?(user_id, chat_id) do
-      GptTalkerbotWeb.Services.Telegram.set_production_mode()
-      send_resp(conn, 204, "")
-    else
-      send_resp(conn, 204, "")
-    end
-  rescue
-    _ ->
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" =>
-            %{
-              "chat" => %{"id" => chat_id},
-              "text" => "/setgrok",
-              "from" => %{"id" => user_id}
-            } = _message
-        } = _params
-      ) do
-    if is_admin_allowed?(user_id, chat_id) do
-      RuntimeEnvs.set_current_service(:grok)
-      send_resp(conn, 204, "")
-    else
-      send_resp(conn, 204, "")
-    end
-  rescue
-    _ ->
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" =>
-            %{
-              "chat" => %{"id" => chat_id},
-              "text" => "/setopenai",
-              "from" => %{"id" => user_id}
-            } = _message
-        } = _params
-      ) do
-    if is_admin_allowed?(user_id, chat_id) do
-      RuntimeEnvs.set_current_service(:openai)
-      send_resp(conn, 204, "")
-    else
-      send_resp(conn, 204, "")
-    end
-  rescue
-    _ ->
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" =>
-            %{
-              "chat" => %{"id" => chat_id},
-              "text" => "/ratobo@gpt_talkerbot " <> _text,
-              "from" => %{"id" => user_id}
-            } = message
-        } = _params
-      ) do
-    if is_allowed?(user_id, chat_id) do
-      handle_bot(conn, message)
-    else
-      send_resp(conn, 204, "")
-    end
-  rescue
-    _ ->
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" =>
-            %{
-              "chat" => %{"id" => chat_id},
-              "text" => "/ratobo " <> _text,
-              "from" => %{"id" => user_id}
-            } = message
-        } = _params
-      ) do
-    if is_allowed?(user_id, chat_id) do
-      handle_bot(conn, message)
-    else
-      send_resp(conn, 204, "")
-    end
-  rescue
-    _ ->
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" =>
-            %{
-              "text" => "/" <> text,
-              "chat" => %{"type" => "private"},
-              "from" => %{"id" => user_id, "is_bot" => false}
-            } = message
-        } = _params
-      ) do
-    command = text |> String.split(" ", parts: 2) |> List.first()
-
-    if Access.is_registered(user_id) do
-      user_commands = Commands.list_user_command_names(user_id)
-
-      cond do
-        command in @private_commands ->
-          apply(Administrator, String.to_atom(command), [
-            message
-          ])
-
-        command in user_commands ->
-          handle_bot(conn, message)
-
-        true ->
-          nil
-      end
-    end
+    if is_admin_allowed?(user_id, chat_id),
+      do: GptTalkerbotWeb.Services.Telegram.set_production_mode()
 
     send_resp(conn, 204, "")
   rescue
-    _ ->
-      send_resp(conn, 204, "")
+    _ -> send_resp(conn, 204, "")
   end
 
   def receive(
         conn,
         %{
-          "message" =>
-            %{
-              "text" => "/" <> text,
-              "chat" => %{"id" => chat_id, "type" => "group"},
-              "from" => %{"id" => user_id, "is_bot" => false}
-            } = message
-        } = _params
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "text" => "/setgrok",
+            "from" => %{"id" => user_id}
+          }
+        }
       ) do
-    command = text |> String.split(" ", parts: 2) |> List.first()
+    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:grok)
+    send_resp(conn, 204, "")
+  rescue
+    _ -> send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "text" => "/setopenai",
+            "from" => %{"id" => user_id}
+          }
+        }
+      ) do
+    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:openai)
+    send_resp(conn, 204, "")
+  rescue
+    _ -> send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "text" => text,
+            "chat" => %{"id" => chat_id},
+            "from" => %{"id" => user_id, "is_bot" => false}
+          } = message
+        }
+      )
+      when is_binary(text) do
+    cond do
+      ratobo?(text) and is_allowed?(user_id, chat_id) ->
+        handle_bot(conn, message)
+
+      String.starts_with?(text, "/") ->
+        handle_slash_command(conn, message, text, user_id, chat_id)
+
+      true ->
+        send_resp(conn, 204, "")
+    end
+  rescue
+    _ -> send_resp(conn, 204, "")
+  end
+
+  def receive(conn, _params), do: send_resp(conn, 204, "")
+
+  defp handle_slash_command(conn, message, "/" <> rest, user_id, _chat_id) do
+    command = rest |> String.split(" ", parts: 2) |> List.first()
+    chat_type = get_in(message, ["chat", "type"])
 
     cond do
-      Access.is_group_registered(chat_id) and command in @group_commands ->
-        apply(Administrator, String.to_atom(command), [
-          message
-        ])
+      chat_type == "private" and Access.is_registered(user_id) and
+          command in @private_commands ->
+        apply(Administrator, String.to_existing_atom(command), [message])
 
-      Access.is_group_registered(chat_id) ->
-        commands = Commands.list_group_commands(chat_id)
+      chat_type in ["group", "supergroup"] and command in @group_commands ->
+        apply(Administrator, String.to_existing_atom(command), [message])
 
-        if command in commands do
-          handle_bot(conn, message)
-        end
-
-      Access.is_registered(user_id) and command == "register_group" ->
+      chat_type in ["group", "supergroup"] and Access.is_registered(user_id) and
+          command == "register_group" ->
         Administrator.register_group(message)
+
+      true ->
+        nil
     end
 
-    send_resp(conn, 204, "")
-  end
-
-  def receive(conn, params) do
-    IO.inspect(params)
     send_resp(conn, 204, "")
   end
 
@@ -206,19 +122,16 @@ defmodule GptTalkerbotWeb.BotController do
       Logger.info("Message enqueued for later processing")
       send_resp(conn, 204, "")
     else
-      _ ->
-        send_resp(conn, 204, "")
+      _ -> send_resp(conn, 204, "")
     end
   end
 
-  defp is_admin_allowed?(owner_id, _) when is_integer(owner_id) do
-    is_admin_allowed?(Integer.to_string(owner_id), nil)
-  end
+  defp ratobo?(text), do: Regex.match?(@ratobo_regex, text)
 
+  defp is_admin_allowed?(owner_id, _) when is_integer(owner_id),
+    do: is_admin_allowed?(Integer.to_string(owner_id), nil)
 
-  defp is_admin_allowed?(owner_id, _) do
-    owner_id == owner_id()
-  end
+  defp is_admin_allowed?(user_id, _), do: user_id == owner_id()
 
   defp is_allowed?(user_id, chat_id) do
     user_id in allowed_users() or allowed_groups() == [] or chat_id in allowed_groups()

@@ -24,5 +24,5 @@ defmodule GptTalkerbot.Telegram.Handlers do
   def get_handler(%Message{text: "/mygpt " <> _command}), do: {:ok, MessageHandler}
   def get_handler(%Message{text: "/mygpt@gpt_talkerbot " <> _command}), do: {:ok, MessageHandler}
   def get_handler(%Message{text: "/" <> _command}), do: {:ok, MessageHandler}
-  def get_handler(_), do: {:ok, DefaultHandler}
+  def get_handler(_), do: {:ok, MessageHandler}
 end
