@@ -26,8 +26,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
       "model" => "grok-4.3",
       "messages" => final_messages,
       "temperature" => settings[:temperature],
-      "top_p" => settings[:top_p],
-      "max_tokens" => 2300,
+      "max_completion_tokens" => settings[:max_completion_tokens],
       "user" => user
     })
     |> handle_response()
@@ -45,9 +44,8 @@ defmodule GptTalkerbotWeb.Services.Grok do
   defp default_settings() do
     %{
       prompt: default_prompt(),
-      temperature: 1.5,
-      top_p: 0.9,
-      max_completion_tokens: 2300
+      temperature: 1.3,
+      max_completion_tokens: 1000
     }
   end
 end

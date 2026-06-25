@@ -26,10 +26,9 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
       "model" => "gpt-5.4-mini",
       "messages" => final_messages,
       "temperature" => settings[:temperature],
-      "top_p" => settings[:top_p],
       "frequency_penalty" => settings[:frequency_penalty],
       "presence_penalty" => settings[:presence_penalty],
-      "max_completion_tokens" => 2300,
+      "max_completion_tokens" => settings[:max_completion_tokens],
       "user" => user
     })
     |> handle_response()
@@ -47,11 +46,10 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
   defp default_settings() do
     %{
       prompt: default_prompt(),
-      temperature: 1.5,
-      top_p: 0.9,
-      frequency_penalty: 0.2,
-      presence_penalty: 0.4,
-      max_completion_tokens: 2300
+      temperature: 1.3,
+      frequency_penalty: 0.5,
+      presence_penalty: 0.6,
+      max_completion_tokens: 1000
     }
   end
 end
