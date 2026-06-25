@@ -1,6 +1,6 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Telegram.Message
-  alias GptTalkerbotWeb.Services.{Grok, OpenAI, Telegram}
+  alias GptTalkerbotWeb.Services.{Grok, OpenAI, Telegram, SpiceChecker}
   alias GptTalkerbot.{Memory, Personality}
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
@@ -63,8 +63,9 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   def process_ai_message(user_id, messages, system_prompt) do
     settings = ai_settings(system_prompt)
+    text = messages |> List.last() |> Map.get(:content, "")
 
-    case RuntimeEnvs.get_current_service() do
+    case SpiceChecker.route(text) do
       :openai ->
         RuntimeEnvs.get_openai_api_key()
         |> OpenAI.new()
