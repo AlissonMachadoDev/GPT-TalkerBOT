@@ -91,6 +91,26 @@ defmodule GptTalkerbotWeb.BotController do
     _ -> send_resp(conn, 204, "")
   end
 
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "text" => text,
+            "chat" => %{"id" => chat_id},
+            "from" => %{"username" => "Channel_Bot", "is_bot" => true}
+          } = message
+        }
+      )
+      when is_binary(text) do
+    if ratobo?(text) and is_allowed?(chat_id, chat_id) do
+      handle_bot(conn, message)
+    else
+      send_resp(conn, 204, "")
+    end
+  rescue
+    _ -> send_resp(conn, 204, "")
+  end
+
   def receive(conn, _params), do: send_resp(conn, 204, "")
 
   defp handle_slash_command(conn, message, "/" <> rest, user_id, _chat_id) do
