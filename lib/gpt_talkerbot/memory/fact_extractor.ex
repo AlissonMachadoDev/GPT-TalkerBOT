@@ -11,12 +11,19 @@ defmodule GptTalkerbot.Memory.FactExtractor do
   Não inclua nada além do JSON.
   """
 
-  @settings %{
+  @openai_settings %{
     prompt: nil,
     temperature: 0.2,
-    top_p: 1.0,
     frequency_penalty: 0.0,
-    presence_penalty: 0.0
+    presence_penalty: 0.0,
+    max_completion_tokens: 200
+  }
+
+  @grok_settings %{
+    prompt: nil,
+    temperature: 0.2,
+    reasoning_effort: "none",
+    max_completion_tokens: 200
   }
 
   def extract_and_save(user_id, text) do
@@ -46,12 +53,12 @@ defmodule GptTalkerbot.Memory.FactExtractor do
       :openai ->
         RuntimeEnvs.get_openai_api_key()
         |> OpenAI.new()
-        |> OpenAI.gpt_completion(user_id, messages, @settings)
+        |> OpenAI.gpt_completion(user_id, messages, @openai_settings)
 
       :grok ->
         RuntimeEnvs.get_grok_api_key()
         |> Grok.new()
-        |> Grok.grok_completion(user_id, messages, @settings)
+        |> Grok.grok_completion(user_id, messages, @grok_settings)
     end
   end
 end

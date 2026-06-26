@@ -18,7 +18,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         } = message
       ) do
     reply_text = reply_to_message.caption || reply_to_message.text
-    history = Memory.get_context(chat_id)
+    history = Memory.get_context(chat_id, user_id)
 
     current_messages =
       build_messages([
@@ -46,7 +46,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           from: %{telegram_id: user_id, first_name: name}
         } = message
       ) do
-    history = Memory.get_context(chat_id)
+    history = Memory.get_context(chat_id, user_id)
     current = build_message(text, "user_name: #{name}, user_id: #{user_id}")
     system_prompt = Personality.build_system_prompt(user_id)
 
@@ -62,19 +62,18 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   def process_ai_message(user_id, messages, system_prompt) do
-    settings = ai_settings(system_prompt)
     text = messages |> List.last() |> Map.get(:content, "")
 
     case SpiceChecker.route(text) do
       :openai ->
         RuntimeEnvs.get_openai_api_key()
         |> OpenAI.new()
-        |> OpenAI.gpt_completion(user_id, messages, settings)
+        |> OpenAI.gpt_completion(user_id, messages, openai_settings(system_prompt))
 
       :grok ->
         RuntimeEnvs.get_grok_api_key()
         |> Grok.new()
-        |> Grok.grok_completion(user_id, messages, settings)
+        |> Grok.grok_completion(user_id, messages, grok_settings(system_prompt))
     end
   end
 
@@ -90,13 +89,22 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     %{role: "user", content: "#{user}, message: #{text}"}
   end
 
-  defp ai_settings(prompt) do
+  defp openai_settings(prompt) do
     %{
       prompt: prompt,
-      temperature: 1.5,
-      top_p: 0.9,
-      frequency_penalty: 0.2,
-      presence_penalty: 0.4
+      temperature: 1.3,
+      frequency_penalty: 0.5,
+      presence_penalty: 0.6,
+      max_completion_tokens: 1000
+    }
+  end
+
+  defp grok_settings(prompt) do
+    %{
+      prompt: prompt,
+      temperature: 0.9,
+      reasoning_effort: "none",
+      max_completion_tokens: 2000
     }
   end
 

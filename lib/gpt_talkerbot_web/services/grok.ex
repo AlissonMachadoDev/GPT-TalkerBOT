@@ -46,7 +46,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
     %{
       prompt: default_prompt(),
       temperature: 0.9,
-      reasoning_effort: "low",
+      reasoning_effort: "none",
       max_completion_tokens: 2000
     }
   end

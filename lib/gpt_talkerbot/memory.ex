@@ -8,11 +8,11 @@ defmodule GptTalkerbot.Memory do
 
   # --- Conversa ---
 
-  def get_context(chat_id) do
+  def get_context(chat_id, user_id) do
     cutoff = DateTime.utc_now() |> DateTime.add(-@max_age_hours * 3600)
 
     ConversationMessage
-    |> where([m], m.chat_id == ^chat_id and m.inserted_at > ^cutoff)
+    |> where([m], m.chat_id == ^chat_id and m.user_id == ^user_id and m.inserted_at > ^cutoff)
     |> order_by([m], asc: m.inserted_at)
     |> limit(@max_messages)
     |> select([m], %{role: m.role, content: m.content})
