@@ -16,7 +16,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
     state = %{
       openai_api_key: Application.get_env(:gpt_talkerbot, :openai_api_key, ""),
       grok_api_key: Application.get_env(:gpt_talkerbot, :grok_api_key, ""),
-      using: :openai,
+      using: :grok,
       mood: :normal,
       message_count: 0,
       spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", @default_spice_threshold),
