@@ -92,7 +92,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp openai_settings(prompt) do
     %{
       prompt: prompt,
-      temperature: 1.3,
+      temperature: RuntimeEnvs.get_temperature(),
       frequency_penalty: 0.5,
       presence_penalty: 0.6,
       max_completion_tokens: 1000
@@ -102,7 +102,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp grok_settings(prompt) do
     %{
       prompt: prompt,
-      temperature: 0.9,
+      temperature: RuntimeEnvs.get_temperature(),
       reasoning_effort: "none",
       max_completion_tokens: 2000
     }

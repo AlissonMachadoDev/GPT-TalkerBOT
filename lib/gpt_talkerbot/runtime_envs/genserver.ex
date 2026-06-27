@@ -4,6 +4,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   require Logger
 
   @default_spice_threshold 0.35
+  @default_temperature 1.3
   @refresh_interval_ms 12 * 60 * 60 * 1_000
 
   def start_link(opts) do
@@ -18,7 +19,8 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
       using: :openai,
       mood: :normal,
       message_count: 0,
-      spice_threshold: fetch_spice_threshold(@default_spice_threshold)
+      spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", @default_spice_threshold),
+      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", @default_temperature)
     }
 
     schedule_refresh()
@@ -30,6 +32,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def get_grok_api_key, do: GenServer.call(__MODULE__, :get_grok_api_key)
   def get_mood, do: GenServer.call(__MODULE__, :get_mood)
   def get_spice_threshold, do: GenServer.call(__MODULE__, :get_spice_threshold)
+  def get_temperature, do: GenServer.call(__MODULE__, :get_temperature)
 
   def set_current_service(service) when service in [:openai, :grok] do
     GenServer.cast(__MODULE__, {:set_current_service, service})
@@ -49,6 +52,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def handle_call(:get_grok_api_key, _from, state), do: {:reply, state.grok_api_key, state}
   def handle_call(:get_mood, _from, state), do: {:reply, state.mood, state}
   def handle_call(:get_spice_threshold, _from, state), do: {:reply, state.spice_threshold, state}
+  def handle_call(:get_temperature, _from, state), do: {:reply, state.temperature, state}
 
   @impl true
   def handle_cast({:set_current_service, service}, state) do
@@ -74,26 +78,31 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   end
 
   def handle_cast(:update_variables, state) do
-    threshold = fetch_spice_threshold(state.spice_threshold)
-    Logger.info("RuntimeEnvs: variables updated (spice_threshold=#{threshold})")
-    {:noreply, %{state | spice_threshold: threshold}}
+    new_state = fetch_variables(state)
+    Logger.info("RuntimeEnvs: variables updated (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})")
+    {:noreply, new_state}
   end
 
   @impl true
   def handle_info(:refresh_variables, state) do
-    threshold = fetch_spice_threshold(state.spice_threshold)
-    Logger.info("RuntimeEnvs: scheduled refresh (spice_threshold=#{threshold})")
+    new_state = fetch_variables(state)
+    Logger.info("RuntimeEnvs: scheduled refresh (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})")
     schedule_refresh()
-    {:noreply, %{state | spice_threshold: threshold}}
+    {:noreply, new_state}
   end
 
   defp schedule_refresh do
     Process.send_after(self(), :refresh_variables, @refresh_interval_ms)
   end
 
-  defp fetch_spice_threshold(fallback) do
-    param_name = Application.get_env(:gpt_talkerbot, :ssm_spice_threshold_param, "/gpt_talkerbot/prod/spice_threshold")
+  defp fetch_variables(state) do
+    %{state |
+      spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", state.spice_threshold),
+      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", state.temperature)
+    }
+  end
 
+  defp fetch_float_param(param_name, fallback) do
     try do
       param_name
       |> ExAws.SSM.get_parameter(with_decryption: true)
@@ -103,21 +112,21 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
           case Float.parse(value) do
             {f, _} -> f
             :error ->
-              Logger.warning("RuntimeEnvs: invalid spice_threshold value from SSM: #{inspect(value)}")
+              Logger.warning("RuntimeEnvs: invalid float value from SSM #{param_name}: #{inspect(value)}")
               fallback
           end
 
         {:error, reason} ->
-          Logger.warning("RuntimeEnvs: failed to fetch spice_threshold from SSM: #{inspect(reason)}")
+          Logger.warning("RuntimeEnvs: failed to fetch #{param_name} from SSM: #{inspect(reason)}")
           fallback
       end
     rescue
       e ->
-        Logger.warning("RuntimeEnvs: exception fetching spice_threshold from SSM: #{Exception.message(e)}")
+        Logger.warning("RuntimeEnvs: exception fetching #{param_name} from SSM: #{Exception.message(e)}")
         fallback
     catch
       :exit, reason ->
-        Logger.warning("RuntimeEnvs: exit fetching spice_threshold from SSM: #{inspect(reason)}")
+        Logger.warning("RuntimeEnvs: exit fetching #{param_name} from SSM: #{inspect(reason)}")
         fallback
     end
   end
