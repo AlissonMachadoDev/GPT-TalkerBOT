@@ -62,7 +62,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   def process_ai_message(user_id, messages, system_prompt) do
-    text = messages |> List.last() |> Map.get(:content, "")
+    text = messages |> Enum.map_join(" ", & &1.content)
 
     case SpiceChecker.route(text) do
       :openai ->
