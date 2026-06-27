@@ -63,6 +63,11 @@ config :phoenix, :stacktrace_depth, 20
 # Initialize plugs at runtime for faster development compilation
 config :phoenix, :plug_init_mode, :runtime
 
+config :ex_aws,
+  access_key_id: "dev_fake_key",
+  secret_access_key: "dev_fake_secret",
+  region: "us-east-2"
+
 if File.exists?("config/dev.secret.exs") do
   import_config "dev.secret.exs"
 end

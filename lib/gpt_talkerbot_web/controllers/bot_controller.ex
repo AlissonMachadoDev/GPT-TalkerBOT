@@ -39,6 +39,22 @@ defmodule GptTalkerbotWeb.BotController do
         %{
           "message" => %{
             "chat" => %{"id" => chat_id},
+            "text" => "/updatevariables",
+            "from" => %{"id" => user_id}
+          }
+        }
+      ) do
+    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.update_variables()
+    send_resp(conn, 204, "")
+  rescue
+    _ -> send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "chat" => %{"id" => chat_id},
             "text" => "/setgrok",
             "from" => %{"id" => user_id}
           }

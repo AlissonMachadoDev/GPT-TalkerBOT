@@ -1,11 +1,10 @@
 defmodule GptTalkerbotWeb.Services.SpiceChecker do
   use Tesla
 
+  require Logger
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
-  @spice_threshold 0.35
-
-  def threshold, do: @spice_threshold
+  def threshold, do: RuntimeEnvs.get_spice_threshold()
 
   def new(api_key) do
     middleware = [
@@ -28,10 +27,11 @@ defmodule GptTalkerbotWeb.Services.SpiceChecker do
 
     case Tesla.post(client, "/moderations", %{"input" => text}) do
       {:ok, %{status: 200, body: body}} ->
+        Logger.debug("SpiceChecker score response: #{inspect(body)}")
         {:ok, extract_score(body)}
-      |> IO.inspect()
 
       _ ->
+        Logger.warning("SpiceChecker score request failed")
         {:error, :unavailable}
     end
   end
@@ -44,8 +44,7 @@ defmodule GptTalkerbotWeb.Services.SpiceChecker do
   """
   def route(text) do
     case score(text) do
-      {:ok, s} when s > @spice_threshold -> :grok
-      {:ok, _} -> :openai
+      {:ok, s} -> if s > threshold(), do: :grok, else: :openai
       {:error, _} -> RuntimeEnvs.get_current_service()
     end
   end

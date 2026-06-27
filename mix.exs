@@ -50,7 +50,10 @@ defmodule GptTalkerbot.MixProject do
       {:broadway_rabbitmq, "~> 0.8"},
       {:amqp, "~> 4.1"},
       {:rabbit_common, "~> 4.0", override: true},
-      {:ssl_verify_fun, "~> 1.1.7"}
+      {:ssl_verify_fun, "~> 1.1.7"},
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_ssm, "~> 2.1"},
+      {:hackney, "~> 1.9"}
     ]
   end
 

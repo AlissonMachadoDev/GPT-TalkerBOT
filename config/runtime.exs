@@ -96,6 +96,12 @@ if config_env() == :prod do
   config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
   config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
   config :gpt_talkerbot, :server_host, System.get_env("SERVER_HOST", "")
+  config :gpt_talkerbot, :ssm_spice_threshold_param, "/gpt_talkerbot/prod/spice_threshold"
+
+  config :ex_aws,
+    region: System.get_env("AWS_REGION", "us-east-2"),
+    access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}, :instance_role],
+    secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}, :instance_role]
 
   # ## Configuring the mailer
   #
