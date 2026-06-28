@@ -1,4 +1,4 @@
-defmodule GptTalkerbot.Personality do
+defmodule GptTalkerbot.PromptSettings.Personality do
   alias GptTalkerbot.Memory
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 

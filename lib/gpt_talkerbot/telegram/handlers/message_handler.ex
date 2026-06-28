@@ -1,8 +1,9 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Telegram.Message
   alias GptTalkerbotWeb.Services.{Grok, OpenAI, Telegram, SpiceChecker}
-  alias GptTalkerbot.{Memory, Personality}
+  alias GptTalkerbot.Memory
   alias GptTalkerbot.Memory.FactExtractor
+  alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions}
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
   @behaviour GptTalkerbot.Telegram.Handlers
@@ -22,7 +23,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
     replied_msg = build_message(reply_text, reply_name, reply_user_id)
     current_msg = build_message(text, name, user_id)
-    system_prompt = Personality.build_system_prompt(user_id)
+    system_prompt = Personality.build_system_prompt(user_id) <> BotDefinitions.format_instruction()
 
     with {:ok, response} <- process_ai_message(user_id, history ++ [replied_msg, current_msg], system_prompt) do
       reply = extract_content(response)
@@ -44,7 +45,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       ) do
     history = Memory.get_context(chat_id, user_id)
     current = build_message(text, name, user_id)
-    system_prompt = Personality.build_system_prompt(user_id)
+    system_prompt = Personality.build_system_prompt(user_id) <> BotDefinitions.format_instruction()
 
     with {:ok, response} <- process_ai_message(user_id, history ++ [current], system_prompt) do
       reply = extract_content(response)
@@ -111,6 +112,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   defp send_message(text, %{chat_id: chat_id, message_id: message_id}) do
-    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id})
+    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id, parse_mode: "HTML"})
   end
 end
