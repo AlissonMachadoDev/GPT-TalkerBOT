@@ -1,10 +1,6 @@
 defmodule GptTalkerbotWeb.Services.OpenAI do
   use Tesla
-  defp default_prompt, do: Application.get_env(:gpt_talkerbot, :default_prompt, "")
 
-  @doc """
-  Creates a client to make the OpenAI requests.
-  """
   def new(api_key) do
     middleware = [
       {Tesla.Middleware.BaseUrl, "https://api.openai.com/v1"},
@@ -16,10 +12,7 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
     Tesla.client(middleware)
   end
 
-  @doc """
-    Creates a gpt completion, sending user messages to get a text based on it.
-  """
-  def gpt_completion(client, user, messages, settings \\ default_settings()) do
+  def gpt_completion(client, user, messages, settings) do
     final_messages = build_messages(settings[:prompt], messages)
 
     Tesla.post(client, "/chat/completions", %{
@@ -41,15 +34,5 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
 
   defp build_messages(prompt, messages) do
     [%{role: "system", content: prompt} | messages]
-  end
-
-  defp default_settings() do
-    %{
-      prompt: default_prompt(),
-      temperature: 1.3,
-      frequency_penalty: 0.5,
-      presence_penalty: 0.6,
-      max_completion_tokens: 1000
-    }
   end
 end

@@ -1,10 +1,6 @@
 defmodule GptTalkerbotWeb.Services.Grok do
   use Tesla
-  defp default_prompt, do: Application.get_env(:gpt_talkerbot, :default_prompt, "")
 
-  @doc """
-  Creates a client to make the OpenAI requests.
-  """
   def new(api_key) do
     middleware = [
       {Tesla.Middleware.BaseUrl, "https://api.x.ai/v1"},
@@ -16,10 +12,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
     Tesla.client(middleware)
   end
 
-  @doc """
-    Creates a grok completion, sending user messages to get a text based on it.
-  """
-  def grok_completion(client, user, messages, settings \\ default_settings()) do
+  def grok_completion(client, user, messages, settings) do
     final_messages = build_messages(settings[:prompt], messages)
 
     Tesla.post(client, "/chat/completions", %{
@@ -40,14 +33,5 @@ defmodule GptTalkerbotWeb.Services.Grok do
 
   defp build_messages(prompt, messages) do
     [%{role: "system", content: prompt} | messages]
-  end
-
-  defp default_settings() do
-    %{
-      prompt: default_prompt(),
-      temperature: 0.9,
-      reasoning_effort: "none",
-      max_completion_tokens: 2000
-    }
   end
 end

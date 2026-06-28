@@ -26,6 +26,14 @@ defmodule GptTalkerbot.Memory do
     end)
   end
 
+  def save_reply_exchange(chat_id, user_id, context_content, user_content, assistant_reply) do
+    Repo.transaction(fn ->
+      insert_message!(chat_id, user_id, "user", context_content)
+      insert_message!(chat_id, user_id, "user", user_content)
+      insert_message!(chat_id, user_id, "assistant", assistant_reply)
+    end)
+  end
+
   def clear_context(chat_id) do
     ConversationMessage
     |> where([m], m.chat_id == ^chat_id)

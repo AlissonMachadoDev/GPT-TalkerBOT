@@ -20,17 +20,13 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     reply_text = reply_to_message.caption || reply_to_message.text
     history = Memory.get_context(chat_id, user_id)
 
-    current_messages =
-      build_messages([
-        %{user: "user_name: #{reply_name}, user_id: #{reply_user_id}", text: reply_text},
-        %{user: "user_name: #{name}, user_id: #{user_id}", text: text}
-      ])
-
+    replied_msg = build_message(reply_text, reply_name, reply_user_id)
+    current_msg = build_message(text, name, user_id)
     system_prompt = Personality.build_system_prompt(user_id)
 
-    with {:ok, response} <- process_ai_message(user_id, history ++ current_messages, system_prompt) do
+    with {:ok, response} <- process_ai_message(user_id, history ++ [replied_msg, current_msg], system_prompt) do
       reply = extract_content(response)
-      Memory.save_exchange(chat_id, user_id, List.last(current_messages).content, reply)
+      Memory.save_reply_exchange(chat_id, user_id, replied_msg.content, current_msg.content, reply)
       FactExtractor.extract_and_save(user_id, text)
       RuntimeEnvs.increment_messages()
       send_message(reply, message)
@@ -47,7 +43,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         } = message
       ) do
     history = Memory.get_context(chat_id, user_id)
-    current = build_message(text, "user_name: #{name}, user_id: #{user_id}")
+    current = build_message(text, name, user_id)
     system_prompt = Personality.build_system_prompt(user_id)
 
     with {:ok, response} <- process_ai_message(user_id, history ++ [current], system_prompt) do
@@ -77,16 +73,15 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-  def build_messages(%{user: user, text: text}) do
-    [build_message(text, user)]
+  defp build_message(text, name, user_id) do
+    %{role: "user", content: "#{user_label(name, user_id)}: #{text}"}
   end
 
-  def build_messages([_message, _reply_message] = messages) when is_list(messages) do
-    Enum.map(messages, &build_message(&1.text, &1.user))
-  end
-
-  defp build_message(text, user) do
-    %{role: "user", content: "#{user}, message: #{text}"}
+  defp user_label(name, user_id) do
+    case Map.get(RuntimeEnvs.get_user_labels(), to_string(user_id)) do
+      nil -> name
+      label -> "#{name} (#{label})"
+    end
   end
 
   defp openai_settings(prompt) do

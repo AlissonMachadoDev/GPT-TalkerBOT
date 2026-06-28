@@ -53,7 +53,8 @@ defmodule GptTalkerbot.MixProject do
       {:ssl_verify_fun, "~> 1.1.7"},
       {:ex_aws, "~> 2.5"},
       {:ex_aws_ssm, "~> 2.1"},
-      {:hackney, "~> 1.9"}
+      {:hackney, "~> 1.9"},
+      {:configparser_ex, "~> 5.0", only: :dev}
     ]
   end
 

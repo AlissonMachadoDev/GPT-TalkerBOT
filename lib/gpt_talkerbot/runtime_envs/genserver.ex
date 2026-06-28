@@ -20,7 +20,8 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
       mood: :normal,
       message_count: 0,
       spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", @default_spice_threshold),
-      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", @default_temperature)
+      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", @default_temperature),
+      user_labels: fetch_user_labels(%{})
     }
 
     schedule_refresh()
@@ -33,6 +34,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def get_mood, do: GenServer.call(__MODULE__, :get_mood)
   def get_spice_threshold, do: GenServer.call(__MODULE__, :get_spice_threshold)
   def get_temperature, do: GenServer.call(__MODULE__, :get_temperature)
+  def get_user_labels, do: GenServer.call(__MODULE__, :get_user_labels)
 
   def set_current_service(service) when service in [:openai, :grok] do
     GenServer.cast(__MODULE__, {:set_current_service, service})
@@ -53,6 +55,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def handle_call(:get_mood, _from, state), do: {:reply, state.mood, state}
   def handle_call(:get_spice_threshold, _from, state), do: {:reply, state.spice_threshold, state}
   def handle_call(:get_temperature, _from, state), do: {:reply, state.temperature, state}
+  def handle_call(:get_user_labels, _from, state), do: {:reply, state.user_labels, state}
 
   @impl true
   def handle_cast({:set_current_service, service}, state) do
@@ -98,8 +101,47 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   defp fetch_variables(state) do
     %{state |
       spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", state.spice_threshold),
-      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", state.temperature)
+      temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", state.temperature),
+      user_labels: fetch_user_labels(state.user_labels)
     }
+  end
+
+  defp fetch_user_labels(fallback) do
+    try do
+      "/gpt_talkerbot/prod/user_labels"
+      |> ExAws.SSM.get_parameter(with_decryption: true)
+      |> ExAws.request()
+      |> case do
+        {:ok, %{"Parameter" => %{"Value" => value}}} ->
+          parse_user_labels(value)
+          |> IO.inspect(label: "RuntimeEnvs: fetched user_labels from SSM")
+
+        {:error, reason} ->
+          Logger.warning("RuntimeEnvs: failed to fetch user_labels from SSM: #{inspect(reason)}")
+          fallback
+      end
+    rescue
+      e ->
+        Logger.warning("RuntimeEnvs: exception fetching user_labels from SSM: #{Exception.message(e)}")
+        fallback
+    catch
+      :exit, reason ->
+        Logger.warning("RuntimeEnvs: exit fetching user_labels from SSM: #{inspect(reason)}")
+        fallback
+    end
+  end
+
+  defp parse_user_labels(value) do
+    value
+    |> String.split(";", trim: true)
+    |> Enum.reduce(%{}, fn pair, acc ->
+      case String.split(pair, ":", parts: 2) do
+        [id, label] ->
+          Map.put(acc, String.trim(id), label |> String.trim() |> String.trim("\""))
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp fetch_float_param(param_name, fallback) do

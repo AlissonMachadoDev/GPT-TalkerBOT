@@ -64,8 +64,8 @@ config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
 config :ex_aws,
-  access_key_id: "dev_fake_key",
-  secret_access_key: "dev_fake_secret",
+  access_key_id: [{:awscli, "default", 30}, :instance_role],
+  secret_access_key: [{:awscli, "default", 30}, :instance_role],
   region: "us-east-2"
 
 if File.exists?("config/dev.secret.exs") do
