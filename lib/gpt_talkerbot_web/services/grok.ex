@@ -6,7 +6,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
       {Tesla.Middleware.BaseUrl, "https://api.x.ai/v1"},
       {Tesla.Middleware.BearerAuth, token: api_key},
       Tesla.Middleware.JSON,
-      {Tesla.Middleware.Logger, log_level: :warn}
+      {Tesla.Middleware.Logger, level: :warning}
     ]
 
     Tesla.client(middleware)

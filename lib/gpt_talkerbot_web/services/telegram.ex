@@ -14,7 +14,7 @@ defmodule GptTalkerbotWeb.Services.Telegram do
 
   plug Tesla.Middleware.Headers
   plug Tesla.Middleware.JSON
-  plug Tesla.Middleware.Logger, log_level: :warn
+  plug Tesla.Middleware.Logger, level: :warning
 
   @doc """
   Calls the sendMessage method in the telegram api
