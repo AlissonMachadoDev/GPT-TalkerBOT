@@ -74,29 +74,10 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
-  parse_env_list = fn env_var ->
-    System.get_env(env_var, "")
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.reduce([], fn str, acc ->
-      case Integer.parse(str) do
-        {int, ""} -> [int | acc]
-        _ -> acc
-      end
-    end)
-    |> Enum.reverse()
-  end
-
-  config :gpt_talkerbot, :allowed_users, parse_env_list.("ALLOWED_USERS")
-  config :gpt_talkerbot, :allowed_groups, parse_env_list.("ALLOWED_GROUPS")
   config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
   config :gpt_talkerbot, :grok_api_key, System.get_env("GROK_API_KEY", "")
-  config :gpt_talkerbot, :owner_id, System.get_env("OWNER_ID", "")
-  config :gpt_talkerbot, :default_prompt, System.get_env("DEFAULT_PROMPT", "")
   config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
   config :gpt_talkerbot, :server_host, System.get_env("SERVER_HOST", "")
-  config :gpt_talkerbot, :ssm_spice_threshold_param, "/gpt_talkerbot/prod/spice_threshold"
 
   config :ex_aws,
     region: System.get_env("AWS_REGION", "us-east-2"),

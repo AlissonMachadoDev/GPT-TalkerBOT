@@ -21,7 +21,11 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
       message_count: 0,
       spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", @default_spice_threshold),
       temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", @default_temperature),
-      user_labels: fetch_user_labels(%{})
+      user_labels: fetch_user_labels(%{}),
+      default_prompt: fetch_string_param("/gpt_talkerbot/prod/default_prompt", Application.get_env(:gpt_talkerbot, :default_prompt, "")),
+      owner_id: fetch_string_param("/gpt_talkerbot/prod/owner_id", Application.get_env(:gpt_talkerbot, :owner_id, "")),
+      allowed_groups: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_groups", Application.get_env(:gpt_talkerbot, :allowed_groups, [])),
+      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", Application.get_env(:gpt_talkerbot, :allowed_users, []))
     }
 
     schedule_refresh()
@@ -35,6 +39,10 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def get_spice_threshold, do: GenServer.call(__MODULE__, :get_spice_threshold)
   def get_temperature, do: GenServer.call(__MODULE__, :get_temperature)
   def get_user_labels, do: GenServer.call(__MODULE__, :get_user_labels)
+  def get_default_prompt, do: GenServer.call(__MODULE__, :get_default_prompt)
+  def get_owner_id, do: GenServer.call(__MODULE__, :get_owner_id)
+  def get_allowed_groups, do: GenServer.call(__MODULE__, :get_allowed_groups)
+  def get_allowed_users, do: GenServer.call(__MODULE__, :get_allowed_users)
 
   def set_current_service(service) when service in [:openai, :grok] do
     GenServer.cast(__MODULE__, {:set_current_service, service})
@@ -56,6 +64,10 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def handle_call(:get_spice_threshold, _from, state), do: {:reply, state.spice_threshold, state}
   def handle_call(:get_temperature, _from, state), do: {:reply, state.temperature, state}
   def handle_call(:get_user_labels, _from, state), do: {:reply, state.user_labels, state}
+  def handle_call(:get_default_prompt, _from, state), do: {:reply, state.default_prompt, state}
+  def handle_call(:get_owner_id, _from, state), do: {:reply, state.owner_id, state}
+  def handle_call(:get_allowed_groups, _from, state), do: {:reply, state.allowed_groups, state}
+  def handle_call(:get_allowed_users, _from, state), do: {:reply, state.allowed_users, state}
 
   @impl true
   def handle_cast({:set_current_service, service}, state) do
@@ -102,7 +114,11 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
     %{state |
       spice_threshold: fetch_float_param("/gpt_talkerbot/prod/spice_threshold", state.spice_threshold),
       temperature: fetch_float_param("/gpt_talkerbot/prod/temperature", state.temperature),
-      user_labels: fetch_user_labels(state.user_labels)
+      user_labels: fetch_user_labels(state.user_labels),
+      default_prompt: fetch_string_param("/gpt_talkerbot/prod/default_prompt", state.default_prompt),
+      owner_id: fetch_string_param("/gpt_talkerbot/prod/owner_id", state.owner_id),
+      allowed_groups: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_groups", state.allowed_groups),
+      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", state.allowed_users)
     }
   end
 
@@ -142,6 +158,45 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
           acc
       end
     end)
+  end
+
+  defp fetch_string_param(param_name, fallback) do
+    try do
+      param_name
+      |> ExAws.SSM.get_parameter(with_decryption: true)
+      |> ExAws.request()
+      |> case do
+        {:ok, %{"Parameter" => %{"Value" => value}}} -> value
+        {:error, reason} ->
+          Logger.warning("RuntimeEnvs: failed to fetch #{param_name} from SSM: #{inspect(reason)}")
+          fallback
+      end
+    rescue
+      e ->
+        Logger.warning("RuntimeEnvs: exception fetching #{param_name} from SSM: #{Exception.message(e)}")
+        fallback
+    catch
+      :exit, reason ->
+        Logger.warning("RuntimeEnvs: exit fetching #{param_name} from SSM: #{inspect(reason)}")
+        fallback
+    end
+  end
+
+  defp fetch_integer_list_param(param_name, fallback) do
+    fetch_string_param(param_name, nil)
+    |> case do
+      nil -> fallback
+      value ->
+        value
+        |> String.split(",", trim: true)
+        |> Enum.reduce([], fn str, acc ->
+          case Integer.parse(String.trim(str)) do
+            {int, ""} -> [int | acc]
+            _ -> acc
+          end
+        end)
+        |> Enum.reverse()
+    end
   end
 
   defp fetch_float_param(param_name, fallback) do

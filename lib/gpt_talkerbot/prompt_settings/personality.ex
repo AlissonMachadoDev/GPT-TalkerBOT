@@ -13,7 +13,7 @@ defmodule GptTalkerbot.PromptSettings.Personality do
   }
 
   def build_system_prompt(user_id) do
-    base = Application.get_env(:gpt_talkerbot, :default_prompt, "")
+    base = RuntimeEnvs.get_default_prompt()
     facts = Memory.get_user_facts(user_id)
     mood = RuntimeEnvs.get_mood()
 

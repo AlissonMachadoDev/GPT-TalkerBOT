@@ -9,9 +9,9 @@ defmodule GptTalkerbotWeb.BotController do
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
-  defp owner_id, do: Application.get_env(:gpt_talkerbot, :owner_id, "")
-  defp allowed_users, do: Application.get_env(:gpt_talkerbot, :allowed_users, [])
-  defp allowed_groups, do: Application.get_env(:gpt_talkerbot, :allowed_groups, [])
+  defp owner_id, do: RuntimeEnvs.get_owner_id()
+  defp allowed_users, do: RuntimeEnvs.get_allowed_users()
+  defp allowed_groups, do: RuntimeEnvs.get_allowed_groups()
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
