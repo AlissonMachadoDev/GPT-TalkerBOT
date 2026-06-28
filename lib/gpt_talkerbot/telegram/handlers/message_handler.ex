@@ -3,7 +3,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbotWeb.Services.{Grok, OpenAI, Telegram, SpiceChecker}
   alias GptTalkerbot.Memory
   alias GptTalkerbot.Memory.FactExtractor
-  alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions}
+  alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, GroupContext}
+  alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
   @behaviour GptTalkerbot.Telegram.Handlers
@@ -23,11 +24,15 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
     replied_msg = build_message(reply_text, reply_name, reply_user_id)
     current_msg = build_message(text, name, user_id)
-    system_prompt = Personality.build_system_prompt(user_id) <> BotDefinitions.format_instruction()
+    system_prompt =
+      Personality.build_system_prompt(user_id)
+      |> append_group_context(chat_id)
+      |> Kernel.<>(BotDefinitions.format_instruction())
 
     with {:ok, response} <- process_ai_message(user_id, history ++ [replied_msg, current_msg], system_prompt) do
       reply = extract_content(response)
       Memory.save_reply_exchange(chat_id, user_id, replied_msg.content, current_msg.content, reply)
+      GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
       RuntimeEnvs.increment_messages()
       send_message(reply, message)
@@ -45,11 +50,15 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       ) do
     history = Memory.get_context(chat_id, user_id, text)
     current = build_message(text, name, user_id)
-    system_prompt = Personality.build_system_prompt(user_id) <> BotDefinitions.format_instruction()
+    system_prompt =
+      Personality.build_system_prompt(user_id)
+      |> append_group_context(chat_id)
+      |> Kernel.<>(BotDefinitions.format_instruction())
 
     with {:ok, response} <- process_ai_message(user_id, history ++ [current], system_prompt) do
       reply = extract_content(response)
       Memory.save_exchange(chat_id, user_id, current.content, reply)
+      GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
       RuntimeEnvs.increment_messages()
       send_message(reply, message)
@@ -109,6 +118,13 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     |> get_in(["choices", Access.at(0), "message", "content"])
     |> String.split_at(3500)
     |> elem(0)
+  end
+
+  defp append_group_context(prompt, chat_id) do
+    case GroupContext.get_context(chat_id) do
+      "" -> prompt
+      context -> prompt <> "\n\nContexto recente do grupo:\n" <> context
+    end
   end
 
   defp send_message(text, %{chat_id: chat_id, message_id: message_id}) do

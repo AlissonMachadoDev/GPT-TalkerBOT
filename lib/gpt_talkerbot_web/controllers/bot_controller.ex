@@ -6,6 +6,7 @@ defmodule GptTalkerbotWeb.BotController do
   alias GptTalkerbot.{Telegram, Access}
   alias BotController.Administrator
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+  alias GptTalkerbot.GroupMessageCache
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
@@ -93,6 +94,9 @@ defmodule GptTalkerbotWeb.BotController do
         }
       )
       when is_binary(text) do
+    name = get_in(message, ["from", "first_name"]) || "Usuário"
+    GroupMessageCache.add_message(chat_id, name, text)
+
     cond do
       ratobo?(text) and is_allowed?(user_id, chat_id) ->
         handle_bot(conn, message)
@@ -118,6 +122,9 @@ defmodule GptTalkerbotWeb.BotController do
         }
       )
       when is_binary(text) do
+    name = get_in(message, ["sender_chat", "title"]) || "Canal"
+    GroupMessageCache.add_message(chat_id, name, text)
+
     if ratobo?(text) and is_allowed?(chat_id, chat_id) do
       handle_bot(conn, message)
     else

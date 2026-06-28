@@ -23,7 +23,9 @@ defmodule GptTalkerbot.Application do
 
       GptTalkerbot.RMQPublisher,
       GptTalkerbot.BotProcessor,
-      GptTalkerbot.RuntimeEnvs.GenServer
+      GptTalkerbot.RuntimeEnvs.GenServer,
+      GptTalkerbot.GroupMessageCache,
+      GptTalkerbot.PromptSettings.GroupContext
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
