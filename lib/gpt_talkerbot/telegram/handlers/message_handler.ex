@@ -122,8 +122,13 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   defp append_group_context(prompt, chat_id) do
     case GroupContext.get_context(chat_id) do
-      "" -> prompt
-      context -> prompt <> "\n\nContexto recente do grupo:\n" <> context
+      "" ->
+        Logger.info("MessageHandler: no group context for chat=#{chat_id}")
+        prompt
+
+      context ->
+        Logger.info("MessageHandler: injecting group context chat=#{chat_id} length=#{String.length(context)}")
+        prompt <> "\n\nContexto recente do grupo:\n" <> context
     end
   end
 

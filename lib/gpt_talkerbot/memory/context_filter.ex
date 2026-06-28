@@ -3,28 +3,33 @@ defmodule GptTalkerbot.Memory.ContextFilter do
 
   alias GptTalkerbotWeb.Services.Embeddings
 
-  # Similaridade mínima para incluir uma mensagem do histórico
   @relevance_threshold 0.4
+  @always_include_last 2
 
-  # Últimas N mensagens sempre incluídas, independente do score
-  # (preserva o fluxo imediato da conversa)
-  @always_include_last 4
-
-  def filter([], _current_text), do: []
+  def filter([], _current_text) do
+    Logger.info("ContextFilter: empty history, nothing to filter")
+    []
+  end
 
   def filter(messages, _current_text) when length(messages) <= @always_include_last do
+    Logger.info("ContextFilter: #{length(messages)} messages <= always_include_last=#{@always_include_last}, skipping filter")
     strip_timestamps(messages)
   end
 
   def filter(messages, current_text) do
+    Logger.info("ContextFilter: filtering #{length(messages)} messages threshold=#{@relevance_threshold} always_include_last=#{@always_include_last}")
+
     all_texts = Enum.map(messages, & &1.content) ++ [current_text]
 
     case Embeddings.embed_batch(all_texts) do
       {:ok, embeddings} ->
-        apply_relevance_filter(messages, embeddings)
+        Logger.info("ContextFilter: embeddings ok total=#{length(embeddings)}")
+        result = apply_relevance_filter(messages, embeddings)
+        Logger.info("ContextFilter: kept #{length(result)}/#{length(messages)} messages after filter")
+        result
 
-      {:error, _} ->
-        Logger.warning("ContextFilter: embedding unavailable, returning full history")
+      {:error, reason} ->
+        Logger.warning("ContextFilter: embedding failed reason=#{inspect(reason)} — returning full history")
         strip_timestamps(messages)
     end
   end
@@ -38,8 +43,15 @@ defmodule GptTalkerbot.Memory.ContextFilter do
     messages
     |> Enum.zip(history_embs)
     |> Enum.with_index()
-    |> Enum.filter(fn {{_msg, emb}, idx} ->
-      idx >= always_from or cosine_similarity(emb, current_emb) >= @relevance_threshold
+    |> Enum.filter(fn {{msg, emb}, idx} ->
+      score = cosine_similarity(emb, current_emb)
+      forced = idx >= always_from
+      included = forced or score >= @relevance_threshold
+      preview = String.slice(msg.content, 0, 50)
+
+      Logger.info("ContextFilter: idx=#{idx} score=#{Float.round(score, 3)} forced=#{forced} included=#{included} content=\"#{preview}\"")
+
+      included
     end)
     |> Enum.map(fn {{msg, _emb}, _idx} -> Map.take(msg, [:role, :content]) end)
   end

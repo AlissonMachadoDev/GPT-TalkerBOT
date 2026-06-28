@@ -27,7 +27,7 @@ defmodule GptTalkerbotWeb.Services.SpiceChecker do
 
     case Tesla.post(client, "/moderations", %{"input" => text}) do
       {:ok, %{status: 200, body: body}} ->
-        Logger.debug("SpiceChecker score response: #{inspect(body)}")
+        Logger.info("SpiceChecker score response: #{inspect(body)}")
         {:ok, extract_score(body)}
 
       _ ->
