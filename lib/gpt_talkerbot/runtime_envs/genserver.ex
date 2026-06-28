@@ -25,7 +25,8 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
       default_prompt: fetch_string_param("/gpt_talkerbot/prod/default_prompt", Application.get_env(:gpt_talkerbot, :default_prompt, "")),
       owner_id: fetch_string_param("/gpt_talkerbot/prod/owner_id", Application.get_env(:gpt_talkerbot, :owner_id, "")),
       allowed_groups: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_groups", Application.get_env(:gpt_talkerbot, :allowed_groups, [])),
-      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", Application.get_env(:gpt_talkerbot, :allowed_users, []))
+      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", Application.get_env(:gpt_talkerbot, :allowed_users, [])),
+      grok_reasoning: fetch_string_param("/gpt_talkerbot/prod/grok_reasoning", "none")
     }
 
     schedule_refresh()
@@ -43,6 +44,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def get_owner_id, do: GenServer.call(__MODULE__, :get_owner_id)
   def get_allowed_groups, do: GenServer.call(__MODULE__, :get_allowed_groups)
   def get_allowed_users, do: GenServer.call(__MODULE__, :get_allowed_users)
+  def get_grok_reasoning, do: GenServer.call(__MODULE__, :get_grok_reasoning)
 
   def set_current_service(service) when service in [:openai, :grok] do
     GenServer.cast(__MODULE__, {:set_current_service, service})
@@ -68,6 +70,7 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
   def handle_call(:get_owner_id, _from, state), do: {:reply, state.owner_id, state}
   def handle_call(:get_allowed_groups, _from, state), do: {:reply, state.allowed_groups, state}
   def handle_call(:get_allowed_users, _from, state), do: {:reply, state.allowed_users, state}
+  def handle_call(:get_grok_reasoning, _from, state), do: {:reply, state.grok_reasoning, state}
 
   @impl true
   def handle_cast({:set_current_service, service}, state) do
@@ -118,7 +121,8 @@ defmodule GptTalkerbot.RuntimeEnvs.GenServer do
       default_prompt: fetch_string_param("/gpt_talkerbot/prod/default_prompt", state.default_prompt),
       owner_id: fetch_string_param("/gpt_talkerbot/prod/owner_id", state.owner_id),
       allowed_groups: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_groups", state.allowed_groups),
-      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", state.allowed_users)
+      allowed_users: fetch_integer_list_param("/gpt_talkerbot/prod/allowed_users", state.allowed_users),
+      grok_reasoning: fetch_string_param("/gpt_talkerbot/prod/grok_reasoning", state.grok_reasoning)
     }
   end
 

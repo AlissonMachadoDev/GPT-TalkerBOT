@@ -99,7 +99,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     %{
       prompt: prompt,
       temperature: RuntimeEnvs.get_temperature(),
-      reasoning_effort: "none",
+      reasoning_effort: RuntimeEnvs.get_grok_reasoning(),
       max_completion_tokens: 2000
     }
   end
