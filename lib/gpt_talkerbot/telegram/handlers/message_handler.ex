@@ -19,7 +19,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         } = message
       ) do
     reply_text = reply_to_message.caption || reply_to_message.text
-    history = Memory.get_context(chat_id, user_id)
+    history = Memory.get_context(chat_id, user_id, text)
 
     replied_msg = build_message(reply_text, reply_name, reply_user_id)
     current_msg = build_message(text, name, user_id)
@@ -43,7 +43,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           from: %{telegram_id: user_id, first_name: name}
         } = message
       ) do
-    history = Memory.get_context(chat_id, user_id)
+    history = Memory.get_context(chat_id, user_id, text)
     current = build_message(text, name, user_id)
     system_prompt = Personality.build_system_prompt(user_id) <> BotDefinitions.format_instruction()
 
