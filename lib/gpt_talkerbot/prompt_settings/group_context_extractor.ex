@@ -28,19 +28,8 @@ defmodule GptTalkerbot.PromptSettings.GroupContextExtractor do
   }
 
   def extract_and_update(chat_id, messages) do
-    service = RuntimeEnvs.get_current_service()
-    Logger.info("GroupContextExtractor: starting extraction chat=#{chat_id} messages=#{length(messages)} service=#{service}")
-
     current_context = GroupContext.get_context(chat_id)
-
-    if current_context == "" do
-      Logger.info("GroupContextExtractor: no existing context chat=#{chat_id} — building from scratch")
-    else
-      Logger.info("GroupContextExtractor: existing context chat=#{chat_id} length=#{String.length(current_context)}")
-    end
-
     messages_text = format_messages(messages)
-    Logger.info("GroupContextExtractor: formatted messages chat=#{chat_id}\n#{messages_text}")
 
     user_content = """
     Contexto atual:
@@ -55,23 +44,19 @@ defmodule GptTalkerbot.PromptSettings.GroupContextExtractor do
       %{role: "user", content: user_content}
     ]
 
-    Logger.info("GroupContextExtractor: calling AI chat=#{chat_id} service=#{service}")
-
-    case call_ai(ai_messages, service) do
+    case call_ai(ai_messages) do
       {:ok, body} ->
         case get_in(body, ["choices", Access.at(0), "message", "content"]) do
           nil ->
-            Logger.warning("GroupContextExtractor: AI returned empty content chat=#{chat_id} body=#{inspect(body)}")
+            Logger.warning("GroupContextExtractor: empty response from AI")
 
           new_context ->
-            trimmed = String.trim(new_context)
-            Logger.info("GroupContextExtractor: AI extraction ok chat=#{chat_id} new_length=#{String.length(trimmed)}")
-            Logger.info("GroupContextExtractor: new context chat=#{chat_id} content=\"#{String.slice(trimmed, 0, 150)}...\"")
-            GroupContext.update_context(chat_id, trimmed)
+            GroupContext.update_context(chat_id, String.trim(new_context))
+            Logger.info("GroupContextExtractor: updated context for chat #{chat_id}")
         end
 
       {:error, reason} ->
-        Logger.error("GroupContextExtractor: AI call failed chat=#{chat_id} reason=#{inspect(reason)}")
+        Logger.warning("GroupContextExtractor: AI call failed: #{inspect(reason)}")
     end
   end
 
@@ -82,17 +67,17 @@ defmodule GptTalkerbot.PromptSettings.GroupContextExtractor do
     end)
   end
 
-  defp call_ai(messages, :openai) do
-    Logger.info("GroupContextExtractor: using OpenAI")
-    RuntimeEnvs.get_openai_api_key()
-    |> OpenAI.new()
-    |> OpenAI.gpt_completion(nil, messages, @settings)
-  end
+  defp call_ai(messages) do
+    case RuntimeEnvs.get_current_service() do
+      :openai ->
+        RuntimeEnvs.get_openai_api_key()
+        |> OpenAI.new()
+        |> OpenAI.gpt_completion(nil, messages, @settings)
 
-  defp call_ai(messages, :grok) do
-    Logger.info("GroupContextExtractor: using Grok")
-    RuntimeEnvs.get_grok_api_key()
-    |> Grok.new()
-    |> Grok.grok_completion(nil, messages, @grok_settings)
+      :grok ->
+        RuntimeEnvs.get_grok_api_key()
+        |> Grok.new()
+        |> Grok.grok_completion(nil, messages, @grok_settings)
+    end
   end
 end

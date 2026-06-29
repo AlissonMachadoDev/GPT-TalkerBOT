@@ -7,8 +7,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
-  require Logger
-
   @behaviour GptTalkerbot.Telegram.Handlers
 
   @impl true
@@ -124,13 +122,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   defp append_group_context(prompt, chat_id) do
     case GroupContext.get_context(chat_id) do
-      "" ->
-        Logger.info("MessageHandler: no group context for chat=#{chat_id}")
-        prompt
-
-      context ->
-        Logger.info("MessageHandler: injecting group context chat=#{chat_id} length=#{String.length(context)}")
-        prompt <> "\n\nContexto recente do grupo:\n" <> context
+      "" -> prompt
+      context -> prompt <> "\n\nContexto recente do grupo:\n" <> context
     end
   end
 
