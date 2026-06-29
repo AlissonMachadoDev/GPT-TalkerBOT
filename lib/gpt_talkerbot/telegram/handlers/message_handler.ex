@@ -7,6 +7,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
 
+  require Logger
+
   @behaviour GptTalkerbot.Telegram.Handlers
 
   @impl true
