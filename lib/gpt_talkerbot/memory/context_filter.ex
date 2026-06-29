@@ -35,13 +35,26 @@ defmodule GptTalkerbot.Memory.ContextFilter do
     total = length(messages)
     always_from = total - @always_include_last
 
-    messages
-    |> Enum.zip(history_embs)
-    |> Enum.with_index()
-    |> Enum.filter(fn {{_msg, emb}, idx} ->
-      idx >= always_from or cosine_similarity(emb, current_emb) >= @relevance_threshold
-    end)
-    |> Enum.map(fn {{msg, _emb}, _idx} -> Map.take(msg, [:role, :content]) end)
+    scored =
+      messages
+      |> Enum.zip(history_embs)
+      |> Enum.with_index()
+      |> Enum.map(fn {{msg, emb}, idx} ->
+        {Map.take(msg, [:role, :content]), cosine_similarity(emb, current_emb), idx >= always_from}
+      end)
+
+    {result, _} =
+      Enum.reduce(scored, {[], false}, fn {msg, score, forced}, {acc, prev_included} ->
+        include =
+          case msg.role do
+            "assistant" -> prev_included or forced
+            _ -> forced or score >= @relevance_threshold
+          end
+
+        {if(include, do: acc ++ [msg], else: acc), include}
+      end)
+
+    result
   end
 
   defp strip_timestamps(messages) do
