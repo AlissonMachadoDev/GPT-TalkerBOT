@@ -29,7 +29,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       |> append_group_context(chat_id)
       |> Kernel.<>(BotDefinitions.format_instruction())
 
-    with {:ok, response} <- process_ai_message(user_id, history ++ [replied_msg, current_msg], system_prompt) do
+    with {:ok, response} <- process_ai_message(user_id, history ++ [BotDefinitions.current_message_marker(), replied_msg, current_msg], system_prompt) do
       reply = extract_content(response)
       Memory.save_reply_exchange(chat_id, user_id, replied_msg.content, current_msg.content, reply)
       GroupMessageCache.add_bot_message(chat_id, reply)
@@ -55,7 +55,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       |> append_group_context(chat_id)
       |> Kernel.<>(BotDefinitions.format_instruction())
 
-    with {:ok, response} <- process_ai_message(user_id, history ++ [current], system_prompt) do
+    with {:ok, response} <- process_ai_message(user_id, history ++ [BotDefinitions.current_message_marker(), current], system_prompt) do
       reply = extract_content(response)
       Memory.save_exchange(chat_id, user_id, current.content, reply)
       GroupMessageCache.add_bot_message(chat_id, reply)
