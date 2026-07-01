@@ -41,7 +41,16 @@ Módulos principais:
 
 ## Comandos
 
-Público (chats permitidos): `/humor`, `/fatos`, `/esquece`, `/resumo`.
+Público (chats permitidos): `/humor`, `/fatos`, `/esquece`, `/resumo`,
+`/enquete <instrução>` (enquete gerada a partir da instrução),
+`/enquete_random` (enquete maliciosa com membros do grupo como opções), `/sorte`
+(dado/caça-níquel nativo), `/ratowarn` (warn debochado na mensagem respondida;
+aos 6 warns o rato perdoa e zera), `/bangif` (bane da memória o GIF respondido).
+
+O bot mantém um registro de membros por chat (construído por observação —
+a Bot API não lista membros), mostra "digitando..." antes de responder,
+memoriza GIFs postados e reposta um aleatório de vez em quando, e pode
+mencionar membros com notificação via `tg://user?id=`.
 
 Admin (apenas owner): `/setproduction`, `/updatevariables`, `/setgrok`, `/setopenai`,
 `/cleardatabase` (apaga toda a memória do bot — conversas, fatos, contextos e humores;
@@ -61,8 +70,8 @@ Parâmetros no SSM (path `/gpt_talkerbot/prod/`), atualizáveis sem deploy via
 `grok_reasoning`, `openai_model`, `grok_model`, `relevance_threshold`,
 `always_include_last`, `max_context_messages`, `session_gap_minutes`,
 `mood_duration`, `interject_probability`, `interject_cooldown_minutes`,
-`reaction_probability`, `daily_summary_hour` (fora de 0–23 desativa),
-`utc_offset`.
+`reaction_probability`, `gif_probability`, `daily_summary_hour` (fora de 0–23
+desativa), `utc_offset`.
 
 Acesso é *fail closed*: com `allowed_users` e `allowed_groups` vazios o bot
 não responde a ninguém.

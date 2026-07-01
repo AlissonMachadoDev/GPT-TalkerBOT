@@ -4,7 +4,7 @@ defmodule GptTalkerbotWeb.BotController do
 
   require Logger
 
-  alias GptTalkerbot.{Telegram, Access, Interjector, MoodTracker, Reactor, RuntimeEnvs}
+  alias GptTalkerbot.{Telegram, Access, ChatMembers, Interjector, MoodTracker, Reactor, RuntimeEnvs}
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.Telegram.RatoCommands
   alias BotController.Administrator
@@ -131,6 +131,7 @@ defmodule GptTalkerbotWeb.BotController do
       when is_binary(text) do
     name = get_in(message, ["from", "first_name"]) || "Usuário"
     GroupMessageCache.add_message(chat_id, name, text)
+    ChatMembers.track_async(chat_id, message["from"])
 
     allowed? = is_allowed?(user_id, chat_id)
     if allowed?, do: MoodTracker.note_activity(chat_id)
@@ -145,6 +146,7 @@ defmodule GptTalkerbotWeb.BotController do
       allowed? ->
         Reactor.maybe_react(chat_id, message["message_id"])
         Interjector.maybe_interject(chat_id)
+        GptTalkerbot.GifMemory.maybe_send(chat_id)
         send_resp(conn, 204, "")
 
       true ->
@@ -178,6 +180,55 @@ defmodule GptTalkerbotWeb.BotController do
   rescue
     e ->
       log_rescue("channel message", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  # GIFs postados no grupo entram na memória do bot (para o envio aleatório)
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "animation" => animation,
+            "from" => %{"id" => user_id, "is_bot" => false} = from
+          }
+        }
+      ) do
+    if is_allowed?(user_id, chat_id) do
+      ChatMembers.track_async(chat_id, from)
+      GptTalkerbot.GifMemory.remember(chat_id, animation)
+    end
+
+    send_resp(conn, 204, "")
+  rescue
+    e ->
+      log_rescue("animation", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  # Service messages de entrada/saída mantêm o registro de membros em dia
+  def receive(
+        conn,
+        %{"message" => %{"chat" => %{"id" => chat_id}, "new_chat_members" => members}}
+      )
+      when is_list(members) do
+    Enum.each(members, &ChatMembers.track(chat_id, &1))
+    send_resp(conn, 204, "")
+  rescue
+    e ->
+      log_rescue("new_chat_members", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{"message" => %{"chat" => %{"id" => chat_id}, "left_chat_member" => user}}
+      ) do
+    ChatMembers.mark_left(chat_id, user)
+    send_resp(conn, 204, "")
+  rescue
+    e ->
+      log_rescue("left_chat_member", e, __STACKTRACE__)
       send_resp(conn, 204, "")
   end
 

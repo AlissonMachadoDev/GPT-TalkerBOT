@@ -59,12 +59,16 @@ defmodule GptTalkerbot.Interjector do
     recent = GroupMessageCache.get_recent(chat_id, 12)
 
     if length(recent) >= @min_recent_messages do
+      Telegram.send_typing(chat_id)
+
       transcript =
         Enum.map_join(recent, "\n", fn m -> "#{m.sender_name}: #{m.content}" end)
 
       system_prompt =
         RuntimeEnvs.get_default_prompt() <>
-          @interject_instruction <> BotDefinitions.format_instruction()
+          @interject_instruction <>
+          GptTalkerbot.ChatMembers.prompt_section(chat_id) <>
+          BotDefinitions.format_instruction()
 
       messages = [%{role: "user", content: "Conversa do grupo:\n" <> transcript}]
 

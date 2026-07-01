@@ -26,6 +26,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         } = message
       ) do
     MoodTracker.react_to_text(chat_id, text)
+    Telegram.send_typing(chat_id)
 
     current_msg = build_current_message(message)
     history = Memory.get_context(chat_id, user_id, text)
@@ -34,6 +35,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     system_prompt =
       Personality.build_system_prompt(user_id, chat_id)
       |> append_group_context(chat_id)
+      |> append_members(chat_id)
       |> Kernel.<>(BotDefinitions.format_instruction())
 
     with {:ok, response} <- process_ai_message(user_id, ai_messages, system_prompt) do
@@ -101,6 +103,10 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     response
     |> get_in(["choices", Access.at(0), "message", "content"])
     |> HtmlSanitizer.truncate()
+  end
+
+  defp append_members(prompt, chat_id) do
+    prompt <> GptTalkerbot.ChatMembers.prompt_section(chat_id)
   end
 
   defp append_group_context(prompt, chat_id) do

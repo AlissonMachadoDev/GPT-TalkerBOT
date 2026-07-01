@@ -37,6 +37,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
     interject_probability: 0.03,
     interject_cooldown_minutes: 30,
     reaction_probability: 0.05,
+    gif_probability: 0.02,
     daily_summary_hour: 23,
     utc_offset: -3
   }
@@ -46,7 +47,8 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :temperature,
     :relevance_threshold,
     :interject_probability,
-    :reaction_probability
+    :reaction_probability,
+    :gif_probability
   ]
   @integer_params [
     :always_include_last,
@@ -106,6 +108,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_interject_probability, do: get(:interject_probability)
   def get_interject_cooldown_minutes, do: get(:interject_cooldown_minutes)
   def get_reaction_probability, do: get(:reaction_probability)
+  def get_gif_probability, do: get(:gif_probability)
   def get_daily_summary_hour, do: get(:daily_summary_hour)
   def get_utc_offset, do: get(:utc_offset)
 
