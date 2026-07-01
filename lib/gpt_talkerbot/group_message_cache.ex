@@ -28,14 +28,23 @@ defmodule GptTalkerbot.GroupMessageCache do
     GenServer.call(__MODULE__, {:get_recent, to_string(chat_id), count})
   end
 
+  @doc "Descarta os buffers de todos os chats (usado pela limpeza total)"
+  def reset do
+    GenServer.call(__MODULE__, :reset)
+  end
+
   @impl true
   def init(_opts) do
     {:ok, %{}}
   end
 
   @impl true
+  def handle_call(:reset, _from, _state) do
+    {:reply, :ok, %{}}
+  end
+
   def handle_call({:get_recent, chat_id, count}, _from, state) do
-    messages = Map.get(state, chat_id, [])
+    {messages, state} = ensure_loaded(state, chat_id)
     recent = messages |> Enum.take(-count)
     {:reply, recent, state}
   end
@@ -50,7 +59,8 @@ defmodule GptTalkerbot.GroupMessageCache do
       inserted_at: NaiveDateTime.utc_now()
     }
 
-    messages = Map.get(state, chat_id, []) ++ [message]
+    {loaded, state} = ensure_loaded(state, chat_id)
+    messages = loaded ++ [message]
 
     new_state =
       if length(messages) >= @buffer_limit do
@@ -64,10 +74,14 @@ defmodule GptTalkerbot.GroupMessageCache do
     {:noreply, new_state}
   end
 
-  @impl true
-  def handle_info({:load_from_db, chat_id}, state) do
-    messages = load_recent_from_db(chat_id)
-    {:noreply, Map.put(state, chat_id, messages)}
+  # Recupera do banco as mensagens persistidas antes do último restart
+  defp ensure_loaded(state, chat_id) do
+    case Map.fetch(state, chat_id) do
+      {:ok, messages} -> {messages, state}
+      :error ->
+        messages = load_recent_from_db(chat_id)
+        {messages, Map.put(state, chat_id, messages)}
+    end
   end
 
   defp persist_message(chat_id, sender_name, content) do
@@ -95,9 +109,10 @@ defmodule GptTalkerbot.GroupMessageCache do
   defp load_recent_from_db(chat_id) do
     GroupMessage
     |> where([m], m.chat_id == ^chat_id)
-    |> order_by([m], asc: m.inserted_at)
+    |> order_by([m], desc: m.inserted_at)
     |> limit(@buffer_limit)
     |> select([m], %{sender_name: m.sender_name, content: m.content, inserted_at: m.inserted_at})
     |> Repo.all()
+    |> Enum.reverse()
   end
 end

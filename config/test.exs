@@ -28,3 +28,7 @@ config :logger, level: :warn
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
+
+# Não exigir RabbitMQ nem AWS SSM para rodar a suíte
+config :gpt_talkerbot, :start_broker, false
+config :gpt_talkerbot, :ssm_enabled, false

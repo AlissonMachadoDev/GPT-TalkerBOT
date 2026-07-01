@@ -7,7 +7,6 @@ defmodule GptTalkerbot.RMQPublisher do
   require Logger
   use GenServer
 
-  @rmq_uri "amqp://rabbitmq:rabbitmq@localhost:5672"
   @bot_exchange "bot_analytics"
   @messages_queue "bot_messages"
 
@@ -21,7 +20,7 @@ defmodule GptTalkerbot.RMQPublisher do
 
   @impl true
   def init(_) do
-    {:ok, conn} = AMQP.Connection.open(@rmq_uri)
+    {:ok, conn} = AMQP.Connection.open(rmq_uri())
     {:ok, channel} = AMQP.Channel.open(conn)
 
     setup_topology(channel)
@@ -48,6 +47,11 @@ defmodule GptTalkerbot.RMQPublisher do
   def terminate(_reason, state) do
     AMQP.Channel.close(state.channel)
     AMQP.Connection.close(state.conn)
+  end
+
+  defp rmq_uri do
+    rmq = Application.get_env(:gpt_talkerbot, :rabbitmq, [])
+    "amqp://#{rmq[:username]}:#{rmq[:password]}@#{rmq[:host]}:5672"
   end
 
   defp setup_topology(channel) do

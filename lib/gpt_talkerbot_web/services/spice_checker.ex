@@ -2,7 +2,7 @@ defmodule GptTalkerbotWeb.Services.SpiceChecker do
   use Tesla
 
   require Logger
-  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+  alias GptTalkerbot.RuntimeEnvs
 
   def threshold, do: RuntimeEnvs.get_spice_threshold()
 

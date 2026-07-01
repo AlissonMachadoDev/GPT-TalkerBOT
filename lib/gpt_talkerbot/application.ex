@@ -5,33 +5,43 @@ defmodule GptTalkerbot.Application do
 
   use Application
 
-  alias GptTalkerbot.RMQPublisher
-
   @impl true
   def start(_type, _args) do
-    children = [
-      # Start the Ecto repository
-      GptTalkerbot.Repo,
-      # Start the Telemetry supervisor
-      GptTalkerbotWeb.Telemetry,
-      # Start the PubSub system
-      {Phoenix.PubSub, name: GptTalkerbot.PubSub},
-      # Start the Endpoint (http/https)
-      GptTalkerbotWeb.Endpoint,
-      # Start a worker by calling: GptTalkerbot.Worker.start_link(arg)
-      # {GptTalkerbot.Worker, arg}
-
-      GptTalkerbot.RMQPublisher,
-      GptTalkerbot.BotProcessor,
-      GptTalkerbot.RuntimeEnvs.GenServer,
-      GptTalkerbot.GroupMessageCache,
-      GptTalkerbot.PromptSettings.GroupContext
-    ]
+    children =
+      [
+        # Start the Ecto repository
+        GptTalkerbot.Repo,
+        # Start the Telemetry supervisor
+        GptTalkerbotWeb.Telemetry,
+        # Start the PubSub system
+        {Phoenix.PubSub, name: GptTalkerbot.PubSub},
+        # Start the Endpoint (http/https)
+        GptTalkerbotWeb.Endpoint
+      ] ++
+        broker_children() ++
+        [
+          GptTalkerbot.RuntimeEnvs,
+          GptTalkerbot.MoodTracker,
+          GptTalkerbot.Interjector,
+          GptTalkerbot.DailySummary,
+          GptTalkerbot.GroupMessageCache,
+          GptTalkerbot.PromptSettings.GroupContext
+        ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: GptTalkerbot.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Desligado em test (config :gpt_talkerbot, :start_broker, false) para não
+  # exigir RabbitMQ de pé
+  defp broker_children do
+    if Application.get_env(:gpt_talkerbot, :start_broker, true) do
+      [GptTalkerbot.RMQPublisher, GptTalkerbot.BotProcessor]
+    else
+      []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

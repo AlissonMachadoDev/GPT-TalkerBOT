@@ -1,30 +1,34 @@
 defmodule GptTalkerbot.Memory do
   import Ecto.Query
   alias GptTalkerbot.Repo
-  alias GptTalkerbot.Memory.{ConversationMessage, UserFact, ContextFilter}
+  alias GptTalkerbot.RuntimeEnvs
+  alias GptTalkerbot.Memory.{ConversationMessage, UserFact, ContextFilter, GroupMessage}
+  alias GptTalkerbot.PromptSettings.GroupContextSchema
 
-  @max_messages 20
   @max_age_hours 4
-  @session_gap_minutes 60
 
   # --- Conversa ---
 
   def get_context(chat_id, user_id, current_text) do
     cutoff = DateTime.utc_now() |> DateTime.add(-@max_age_hours * 3600)
+    max_messages = RuntimeEnvs.get_max_context_messages()
 
     ConversationMessage
     |> where([m], m.chat_id == ^chat_id and m.user_id == ^user_id and m.inserted_at > ^cutoff)
-    |> order_by([m], asc: m.inserted_at)
-    |> limit(@max_messages)
+    |> order_by([m], desc: m.inserted_at)
+    |> limit(^max_messages)
     |> select([m], %{role: m.role, content: m.content, inserted_at: m.inserted_at})
     |> Repo.all()
+    |> Enum.reverse()
     |> trim_to_last_session()
     |> ContextFilter.filter(current_text)
   end
 
-  defp trim_to_last_session([]), do: []
-  defp trim_to_last_session(messages) do
-    gap_seconds = @session_gap_minutes * 60
+  @doc false
+  def trim_to_last_session([]), do: []
+
+  def trim_to_last_session(messages) do
+    gap_seconds = RuntimeEnvs.get_session_gap_minutes() * 60
 
     {session_start, _} =
       Enum.with_index(messages)
@@ -43,14 +47,6 @@ defmodule GptTalkerbot.Memory do
 
   def save_exchange(chat_id, user_id, user_content, assistant_reply) do
     Repo.transaction(fn ->
-      insert_message!(chat_id, user_id, "user", user_content)
-      insert_message!(chat_id, user_id, "assistant", assistant_reply)
-    end)
-  end
-
-  def save_reply_exchange(chat_id, user_id, context_content, user_content, assistant_reply) do
-    Repo.transaction(fn ->
-      insert_message!(chat_id, user_id, "user", context_content)
       insert_message!(chat_id, user_id, "user", user_content)
       insert_message!(chat_id, user_id, "assistant", assistant_reply)
     end)
@@ -75,24 +71,66 @@ defmodule GptTalkerbot.Memory do
 
   # --- Fatos do usuário ---
 
+  # Sem limite o system prompt incha indefinidamente com o uso contínuo
+  @max_facts 20
+
   def get_user_facts(user_id) do
     UserFact
     |> where([f], f.user_id == ^user_id)
+    |> order_by([f], desc: f.updated_at)
+    |> limit(@max_facts)
     |> Repo.all()
   end
 
   def upsert_fact(user_id, key, value) do
-    %UserFact{}
-    |> UserFact.changeset(%{user_id: user_id, key: key, value: value})
-    |> Repo.insert(
-      on_conflict: [set: [value: value, updated_at: DateTime.utc_now()]],
-      conflict_target: [:user_id, :key]
-    )
+    result =
+      %UserFact{}
+      |> UserFact.changeset(%{user_id: user_id, key: key, value: value})
+      |> Repo.insert(
+        on_conflict: [set: [value: value, updated_at: DateTime.utc_now()]],
+        conflict_target: [:user_id, :key]
+      )
+
+    trim_facts(user_id)
+    result
+  end
+
+  defp trim_facts(user_id) do
+    ids_to_keep =
+      UserFact
+      |> where([f], f.user_id == ^user_id)
+      |> order_by([f], desc: f.updated_at)
+      |> limit(@max_facts)
+      |> select([f], f.id)
+
+    UserFact
+    |> where([f], f.user_id == ^user_id and f.id not in subquery(ids_to_keep))
+    |> Repo.delete_all()
   end
 
   def clear_user_facts(user_id) do
     UserFact
     |> where([f], f.user_id == ^user_id)
     |> Repo.delete_all()
+  end
+
+  # --- Limpeza total ---
+
+  @doc """
+  Apaga toda a memória do bot: conversas, fatos, buffer de grupo e contextos,
+  incluindo os caches em memória. As tabelas de registro legadas
+  (users/groups/commands) ficam intactas.
+  """
+  def wipe_all do
+    Repo.delete_all(ConversationMessage)
+    Repo.delete_all(UserFact)
+    Repo.delete_all(GroupMessage)
+    Repo.delete_all(GroupContextSchema)
+
+    GptTalkerbot.GroupMessageCache.reset()
+    GptTalkerbot.PromptSettings.GroupContext.reset()
+    GptTalkerbot.MoodTracker.reset()
+
+    :ok
   end
 end

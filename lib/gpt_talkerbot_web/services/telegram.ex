@@ -31,6 +31,18 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     build_and_send(&post/2, "/sendPhoto", ClientInputs.SendPhoto, params)
   end
 
+  @doc """
+  Reage a uma mensagem com um emoji (setMessageReaction).
+  O emoji precisa estar na lista de reações aceitas pelo Telegram.
+  """
+  def set_message_reaction(%{chat_id: chat_id, message_id: message_id, emoji: emoji}) do
+    post("/setMessageReaction", %{
+      chat_id: chat_id,
+      message_id: message_id,
+      reaction: [%{type: "emoji", emoji: emoji}]
+    })
+  end
+
   defp build_and_send(fun, route, module, params) do
     with {:ok, input} <- module.build(params) do
       fun.(route, input)
@@ -42,8 +54,12 @@ defmodule GptTalkerbotWeb.Services.Telegram do
   end
 
   def set_production_mode() do
-    server =  Application.get_env(:gpt_talkerbot, :server_host, "")
-    get("/setWebhook?url=#{server}&drop_pending_updates=true")
+    server = Application.get_env(:gpt_talkerbot, :server_host, "")
+
+    case Application.get_env(:gpt_talkerbot, :telegram_webhook_secret, "") do
+      "" -> get("/setWebhook?url=#{server}&drop_pending_updates=true")
+      secret -> get("/setWebhook?url=#{server}&drop_pending_updates=true&secret_token=#{secret}")
+    end
   end
 
 

@@ -6,12 +6,20 @@ defmodule GptTalkerbotWeb.Router do
     plug GptTalkerbotWeb.DataFormat
   end
 
+  pipeline :telegram_webhook do
+    plug GptTalkerbotWeb.Plugs.TelegramSecret
+  end
+
   scope "/", GptTalkerbotWeb do
     scope "/api", GptTalkerbotWeb do
       pipe_through :api
     end
 
-    post "/webhook", BotController, :receive
+    scope "/" do
+      pipe_through :telegram_webhook
+
+      post "/webhook", BotController, :receive
+    end
   end
 
   # Enables LiveDashboard only for development

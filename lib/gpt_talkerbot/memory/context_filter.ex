@@ -1,22 +1,20 @@
 defmodule GptTalkerbot.Memory.ContextFilter do
   require Logger
 
+  alias GptTalkerbot.RuntimeEnvs
   alias GptTalkerbotWeb.Services.Embeddings
-
-  # Similaridade mínima para incluir uma mensagem do histórico
-  @relevance_threshold 0.4
-
-  # Últimas N mensagens sempre incluídas, independente do score
-  # (preserva o fluxo imediato da conversa)
-  @always_include_last 4
 
   def filter([], _current_text), do: []
 
-  def filter(messages, _current_text) when length(messages) <= @always_include_last do
-    strip_timestamps(messages)
+  def filter(messages, current_text) do
+    if length(messages) <= RuntimeEnvs.get_always_include_last() do
+      strip_timestamps(messages)
+    else
+      embed_and_filter(messages, current_text)
+    end
   end
 
-  def filter(messages, current_text) do
+  defp embed_and_filter(messages, current_text) do
     all_texts = Enum.map(messages, & &1.content) ++ [current_text]
 
     case Embeddings.embed_batch(all_texts) do
@@ -29,11 +27,13 @@ defmodule GptTalkerbot.Memory.ContextFilter do
     end
   end
 
-  defp apply_relevance_filter(messages, embeddings) do
+  @doc false
+  def apply_relevance_filter(messages, embeddings) do
     current_emb = List.last(embeddings)
     history_embs = Enum.drop(embeddings, -1)
     total = length(messages)
-    always_from = total - @always_include_last
+    always_from = total - RuntimeEnvs.get_always_include_last()
+    threshold = RuntimeEnvs.get_relevance_threshold()
 
     scored =
       messages
@@ -48,7 +48,7 @@ defmodule GptTalkerbot.Memory.ContextFilter do
         include =
           case msg.role do
             "assistant" -> prev_included or forced
-            _ -> forced or score >= @relevance_threshold
+            _ -> forced or score >= threshold
           end
 
         {if(include, do: acc ++ [msg], else: acc), include}

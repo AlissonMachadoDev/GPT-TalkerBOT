@@ -16,7 +16,7 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
     final_messages = build_messages(settings[:prompt], messages)
 
     Tesla.post(client, "/chat/completions", %{
-      "model" => "gpt-5.4-mini",
+      "model" => settings[:model] || "gpt-5.4-mini",
       "messages" => final_messages,
       "temperature" => settings[:temperature],
       "frequency_penalty" => settings[:frequency_penalty],

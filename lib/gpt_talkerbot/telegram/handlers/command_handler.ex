@@ -6,7 +6,6 @@ defmodule GptTalkerbot.Telegram.Handlers.CommandHandler do
   require Logger
   alias GptTalkerbot.Telegram.Message
   alias GptTalkerbotWeb.Services.Telegram
-  alias GptTalkerbotWeb.Services.OpenAI
   alias GptTalkerbot.Commands
   alias Commands.Command
 
@@ -14,8 +13,10 @@ defmodule GptTalkerbot.Telegram.Handlers.CommandHandler do
 
   def handle(%Message{text: "/" <> command_text} = message) do
     {command_key, message_text} =
-      String.split(command_text, " ", parts: 2)
-      |> then(fn [first, last] -> {String.trim_leading(first, "/"), last} end)
+      case String.split(command_text, " ", parts: 2) do
+        [first] -> {String.trim_leading(first, "/"), ""}
+        [first, last] -> {String.trim_leading(first, "/"), last}
+      end
 
     case Commands.find_command_by_key(command_key) do
       %Command{} = command ->

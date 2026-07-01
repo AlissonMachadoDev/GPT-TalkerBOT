@@ -11,6 +11,13 @@ GROK_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/grok_api_key" -
 TELEGRAM_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/telegram_api_key" --with-decryption --query Parameter.Value --output text)
 SERVER_HOST=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/server_host" --with-decryption --query Parameter.Value --output text)
 
+# Tolerante: sem o parâmetro o serviço sobe com secret vazio e a validação
+# do webhook fica desligada (o plug loga warning a cada update)
+TELEGRAM_WEBHOOK_SECRET=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/telegram_webhook_secret" --with-decryption --query Parameter.Value --output text 2>/dev/null || echo "")
+if [ -z "$TELEGRAM_WEBHOOK_SECRET" ]; then
+  echo "WARNING: /gpt_talkerbot/prod/telegram_webhook_secret not found - webhook validation will be DISABLED"
+fi
+
 echo "Setting up directory permissions..."
 sudo mkdir -p /opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/tmp
 sudo chown -R ubuntu:ubuntu /opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/tmp
@@ -41,6 +48,7 @@ Environment="OPENAI_API_KEY=${OPENAI_API_KEY}"
 Environment="GROK_API_KEY=${GROK_API_KEY}"
 Environment="TELEGRAM_API_KEY=${TELEGRAM_API_KEY}"
 Environment="SERVER_HOST=${SERVER_HOST}"
+Environment="TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}"
 
 ExecStart=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot start
 ExecStop=/opt/gpt_talkerbot/_build/prod/rel/gpt_talkerbot/bin/gpt_talkerbot stop

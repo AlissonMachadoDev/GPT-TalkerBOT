@@ -1,6 +1,7 @@
 defmodule GptTalkerbot.PromptSettings.Personality do
   alias GptTalkerbot.Memory
-  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+  alias GptTalkerbot.MoodTracker
+  alias GptTalkerbot.RuntimeEnvs
 
   @mood_suffixes %{
     normal: "",
@@ -9,13 +10,19 @@ defmodule GptTalkerbot.PromptSettings.Personality do
     excited:
       "\n\nVocê está animadíssimo hoje. Mais expansivo que de costume, mais referências pop, mais energia.",
     sarcastic:
-      "\n\nModo sarcasmo ativado. Cada resposta tem uma dose extra de ironia e duplo sentido."
+      "\n\nModo sarcasmo ativado. Cada resposta tem uma dose extra de ironia e duplo sentido.",
+    sleepy:
+      "\n\nÉ madrugada e você está sonolento. Respostas curtas, meio resmungadas, com bocejos ocasionais e vontade de voltar a dormir."
   }
 
-  def build_system_prompt(user_id) do
+  # No prompt entram menos fatos que o armazenado: cada fato injetado é um
+  # convite para o modelo citá-lo, mesmo sem caber na piada
+  @max_prompt_facts 8
+
+  def build_system_prompt(user_id, chat_id) do
     base = RuntimeEnvs.get_default_prompt()
-    facts = Memory.get_user_facts(user_id)
-    mood = RuntimeEnvs.get_mood()
+    facts = Memory.get_user_facts(user_id) |> Enum.take(@max_prompt_facts)
+    mood = MoodTracker.get_mood(chat_id)
 
     base
     |> append_facts(facts)
@@ -26,7 +33,10 @@ defmodule GptTalkerbot.PromptSettings.Personality do
 
   defp append_facts(prompt, facts) do
     facts_text = Enum.map_join(facts, "\n", fn f -> "- #{f.key}: #{f.value}" end)
-    prompt <> "\n\nO que você já sabe sobre este usuário:\n" <> facts_text
+
+    prompt <>
+      "\n\nFatos sobre este usuário — use somente se encaixar naturalmente na resposta; não cite só porque sabe:\n" <>
+      facts_text
   end
 
   defp apply_mood(prompt, mood) do

@@ -71,3 +71,13 @@ config :ex_aws,
 if File.exists?("config/dev.secret.exs") do
   import_config "dev.secret.exs"
 end
+
+# Overrides usados pelo scripts/dev_up.sh: precisam vir depois do
+# dev.secret.exs para vencer os valores estáticos de lá
+if server_host = System.get_env("SERVER_HOST") do
+  config :gpt_talkerbot, :server_host, server_host
+end
+
+if webhook_secret = System.get_env("TELEGRAM_WEBHOOK_SECRET") do
+  config :gpt_talkerbot, :telegram_webhook_secret, webhook_secret
+end

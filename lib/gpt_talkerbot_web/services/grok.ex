@@ -16,7 +16,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
     final_messages = build_messages(settings[:prompt], messages)
 
     Tesla.post(client, "/chat/completions", %{
-      "model" => "grok-4.3",
+      "model" => settings[:model] || "grok-4.3",
       "messages" => final_messages,
       "temperature" => settings[:temperature],
       "reasoning_effort" => settings[:reasoning_effort],

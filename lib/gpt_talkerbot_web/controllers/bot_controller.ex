@@ -3,10 +3,11 @@ defmodule GptTalkerbotWeb.BotController do
   use GptTalkerbotWeb, :controller
 
   require Logger
-  alias GptTalkerbot.{Telegram, Access}
-  alias BotController.Administrator
-  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+
+  alias GptTalkerbot.{Telegram, Access, Interjector, MoodTracker, Reactor, RuntimeEnvs}
   alias GptTalkerbot.GroupMessageCache
+  alias GptTalkerbot.Telegram.RatoCommands
+  alias BotController.Administrator
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
@@ -32,7 +33,9 @@ defmodule GptTalkerbotWeb.BotController do
 
     send_resp(conn, 204, "")
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("setproduction", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -48,7 +51,9 @@ defmodule GptTalkerbotWeb.BotController do
     if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.update_variables()
     send_resp(conn, 204, "")
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("updatevariables", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -64,7 +69,9 @@ defmodule GptTalkerbotWeb.BotController do
     if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:grok)
     send_resp(conn, 204, "")
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("setgrok", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -80,7 +87,35 @@ defmodule GptTalkerbotWeb.BotController do
     if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:openai)
     send_resp(conn, 204, "")
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("setopenai", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "text" => "/cleardatabase",
+            "from" => %{"id" => user_id}
+          }
+        }
+      ) do
+    if is_admin_allowed?(user_id, chat_id) do
+      GptTalkerbot.Memory.wipe_all()
+
+      GptTalkerbotWeb.Services.Telegram.send_message(%{
+        chat_id: to_string(chat_id),
+        text: "🐀 Amnésia total instalada. Conversas, fatos e rancores: tudo formatado."
+      })
+    end
+
+    send_resp(conn, 204, "")
+  rescue
+    e ->
+      log_rescue("cleardatabase", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -97,18 +132,28 @@ defmodule GptTalkerbotWeb.BotController do
     name = get_in(message, ["from", "first_name"]) || "Usuário"
     GroupMessageCache.add_message(chat_id, name, text)
 
+    allowed? = is_allowed?(user_id, chat_id)
+    if allowed?, do: MoodTracker.note_activity(chat_id)
+
     cond do
-      ratobo?(text) and is_allowed?(user_id, chat_id) ->
+      ratobo?(text) and allowed? ->
         handle_bot(conn, message)
 
       String.starts_with?(text, "/") ->
         handle_slash_command(conn, message, text, user_id, chat_id)
 
+      allowed? ->
+        Reactor.maybe_react(chat_id, message["message_id"])
+        Interjector.maybe_interject(chat_id)
+        send_resp(conn, 204, "")
+
       true ->
         send_resp(conn, 204, "")
     end
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("user message", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(
@@ -131,16 +176,28 @@ defmodule GptTalkerbotWeb.BotController do
       send_resp(conn, 204, "")
     end
   rescue
-    _ -> send_resp(conn, 204, "")
+    e ->
+      log_rescue("channel message", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
   end
 
   def receive(conn, _params), do: send_resp(conn, 204, "")
 
-  defp handle_slash_command(conn, message, "/" <> rest, user_id, _chat_id) do
-    command = rest |> String.split(" ", parts: 2) |> List.first()
+  defp handle_slash_command(conn, message, "/" <> rest, user_id, chat_id) do
+    command =
+      rest
+      |> String.split(" ", parts: 2)
+      |> List.first()
+      # comandos em grupo chegam como /humor@gpt_talkerbot
+      |> String.split("@")
+      |> List.first()
+
     chat_type = get_in(message, ["chat", "type"])
 
     cond do
+      command in RatoCommands.commands() and is_allowed?(user_id, chat_id) ->
+        RatoCommands.handle(command, message)
+
       chat_type == "private" and Access.is_registered(user_id) and
           command in @private_commands ->
         apply(Administrator, String.to_existing_atom(command), [message])
@@ -176,7 +233,16 @@ defmodule GptTalkerbotWeb.BotController do
 
   defp is_admin_allowed?(user_id, _), do: user_id == owner_id()
 
+  # Fail closed: se allowed_groups vier vazio (ex.: falha no fetch do SSM),
+  # o bot fica fechado em vez de aberto para o mundo
   defp is_allowed?(user_id, chat_id) do
-    user_id in allowed_users() or allowed_groups() == [] or chat_id in allowed_groups()
+    user_id in allowed_users() or chat_id in allowed_groups()
+  end
+
+  defp log_rescue(context, exception, stacktrace) do
+    Logger.error(
+      "BotController: error processing #{context}: " <>
+        Exception.format(:error, exception, stacktrace)
+    )
   end
 end

@@ -20,12 +20,21 @@ defmodule GptTalkerbot.PromptSettings.GroupContext do
     GenServer.cast(__MODULE__, {:update_context, to_string(chat_id), context})
   end
 
+  @doc "Descarta o cache de contexto de todos os chats (usado pela limpeza total)"
+  def reset do
+    GenServer.call(__MODULE__, :reset)
+  end
+
   @impl true
   def init(_opts) do
     {:ok, %{}}
   end
 
   @impl true
+  def handle_call(:reset, _from, _state) do
+    {:reply, :ok, %{}}
+  end
+
   def handle_call({:get_context, chat_id}, _from, state) do
     case Map.get(state, chat_id) do
       nil ->

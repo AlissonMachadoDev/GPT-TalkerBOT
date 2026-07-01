@@ -11,6 +11,11 @@ config :gpt_talkerbot,
   ecto_repos: [GptTalkerbot.Repo],
   generators: [binary_id: true]
 
+config :gpt_talkerbot, :rabbitmq,
+  host: "localhost",
+  username: "rabbitmq",
+  password: "rabbitmq"
+
 # Configures the endpoint
 config :gpt_talkerbot, GptTalkerbotWeb.Endpoint,
   url: [host: "localhost"],

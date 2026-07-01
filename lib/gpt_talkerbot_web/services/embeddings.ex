@@ -1,7 +1,7 @@
 defmodule GptTalkerbotWeb.Services.Embeddings do
   use Tesla
 
-  alias GptTalkerbot.RuntimeEnvs.GenServer, as: RuntimeEnvs
+  alias GptTalkerbot.RuntimeEnvs
 
   @model "text-embedding-3-small"
 
