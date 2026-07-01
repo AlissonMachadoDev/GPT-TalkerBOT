@@ -72,11 +72,14 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # lá e o modelo lê como se a pessoa tivesse insistido no assunto
   defp build_current_message(%Message{
          text: text,
+         quote_text: quote_text,
          from: %{telegram_id: user_id, first_name: name},
          reply_to_message: %{from: %{telegram_id: reply_user_id, first_name: reply_name}} = reply
        }) do
+    # Se a pessoa citou um trecho específico (TextQuote), ele vale mais que
+    # a mensagem inteira
     quoted =
-      (reply.caption || reply.text || "")
+      (quote_text || reply.caption || reply.text || "")
       |> String.slice(0, @max_quote_length)
 
     content =

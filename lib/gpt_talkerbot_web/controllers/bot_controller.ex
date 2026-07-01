@@ -6,7 +6,7 @@ defmodule GptTalkerbotWeb.BotController do
 
   alias GptTalkerbot.{Telegram, Access, ChatMembers, Interjector, MoodTracker, Reactor, RuntimeEnvs}
   alias GptTalkerbot.GroupMessageCache
-  alias GptTalkerbot.Telegram.RatoCommands
+  alias GptTalkerbot.Telegram.{ContentDescriber, RatoCommands}
   alias BotController.Administrator
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
@@ -180,6 +180,65 @@ defmodule GptTalkerbotWeb.BotController do
   rescue
     e ->
       log_rescue("channel message", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  # Mídia com legenda (foto, vídeo, GIF...): a legenda dispara o bot e o
+  # conteúdo descrito entra no buffer do grupo
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "caption" => caption,
+            "chat" => %{"id" => chat_id},
+            "from" => %{"id" => user_id, "is_bot" => false} = from
+          } = message
+        }
+      )
+      when is_binary(caption) do
+    name = from["first_name"] || "Usuário"
+    GroupMessageCache.add_message(chat_id, name, ContentDescriber.describe(message) || caption)
+    ChatMembers.track_async(chat_id, from)
+
+    allowed? = is_allowed?(user_id, chat_id)
+    if allowed?, do: MoodTracker.note_activity(chat_id)
+
+    if allowed? && message["animation"] do
+      GptTalkerbot.GifMemory.remember(chat_id, message["animation"])
+    end
+
+    if ratobo?(caption) and allowed? do
+      handle_bot(conn, message)
+    else
+      send_resp(conn, 204, "")
+    end
+  rescue
+    e ->
+      log_rescue("captioned media", e, __STACKTRACE__)
+      send_resp(conn, 204, "")
+  end
+
+  # Enquetes de usuários entram no buffer do grupo como texto descrito
+  def receive(
+        conn,
+        %{
+          "message" => %{
+            "chat" => %{"id" => chat_id},
+            "poll" => _poll,
+            "from" => %{"id" => user_id, "is_bot" => false} = from
+          } = message
+        }
+      ) do
+    if is_allowed?(user_id, chat_id) do
+      name = from["first_name"] || "Alguém"
+      GroupMessageCache.add_message(chat_id, name, ContentDescriber.describe(message))
+      ChatMembers.track_async(chat_id, from)
+    end
+
+    send_resp(conn, 204, "")
+  rescue
+    e ->
+      log_rescue("poll message", e, __STACKTRACE__)
       send_resp(conn, 204, "")
   end
 

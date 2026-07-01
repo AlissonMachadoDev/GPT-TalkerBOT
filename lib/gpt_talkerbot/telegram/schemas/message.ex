@@ -5,6 +5,7 @@ defmodule GptTalkerbot.Telegram.Message do
   use Ecto.Schema
 
   alias Ecto.Changeset
+  alias GptTalkerbot.Telegram.ContentDescriber
 
   defmodule From do
     use Ecto.Schema
@@ -40,6 +41,7 @@ defmodule GptTalkerbot.Telegram.Message do
     field :chat_type, :string
     field :text, :string
     field :caption, :string
+    field :quote_text, :string
 
     embeds_one :from, From
     embeds_one :reply_to_message, ReplyToMessage
@@ -47,9 +49,11 @@ defmodule GptTalkerbot.Telegram.Message do
 
   def cast(params) do
     %__MODULE__{}
-    |> Changeset.cast(params, [:text, :chat_id, :chat_type])
-    |> Changeset.validate_required([:text])
+    |> Changeset.cast(params, [:text, :caption, :chat_id, :chat_type, :quote_text])
     |> put_fields(params)
+    |> put_content_description(params)
+    |> put_quote_text(params)
+    |> Changeset.validate_required([:text])
     |> Changeset.cast_embed(:from, with: &from_changeset/2)
     |> Changeset.cast_embed(:reply_to_message, with: &reply_to_message_changeset/2)
   end
@@ -58,8 +62,31 @@ defmodule GptTalkerbot.Telegram.Message do
     schema
     |> Changeset.cast(params, [:text, :chat_id, :chat_type, :chat_first_name, :caption])
     |> put_fields(params)
+    |> put_content_description(params)
     |> Changeset.cast_embed(:from, with: &from_changeset/2)
   end
+
+  # Mensagens sem texto (enquete, sticker, mídia com legenda, dado...) ganham
+  # a representação textual do conteúdo, para servir de contexto ao modelo
+  defp put_content_description(changeset, params) do
+    case Changeset.get_field(changeset, :text) do
+      nil ->
+        case ContentDescriber.describe(params) do
+          nil -> changeset
+          description -> Changeset.put_change(changeset, :text, description)
+        end
+
+      _text ->
+        changeset
+    end
+  end
+
+  # TextQuote da API: quando a pessoa responde citando só um trecho da mensagem
+  defp put_quote_text(changeset, %{"quote" => %{"text" => text}}) when is_binary(text) do
+    Changeset.put_change(changeset, :quote_text, text)
+  end
+
+  defp put_quote_text(changeset, _params), do: changeset
 
   defp from_changeset(schema, params) do
     schema

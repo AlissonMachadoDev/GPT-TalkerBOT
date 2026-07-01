@@ -15,7 +15,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
   require Logger
 
-  alias GptTalkerbot.{ChatMembers, GifMemory, LLM, Memory, MoodTracker, RuntimeEnvs, Warns}
+  alias GptTalkerbot.{ChatMembers, GifMemory, GroupMessageCache, LLM, Memory, MoodTracker, RuntimeEnvs, Warns}
   alias GptTalkerbot.PromptSettings.{BotDefinitions, GroupContext}
   alias GptTalkerbot.Telegram.HtmlSanitizer
   alias GptTalkerbotWeb.Services.Telegram
@@ -118,7 +118,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
           {:error, _} -> "Quem do grupo é mais provável de ser substituído por um rato robótico sem ninguém notar?"
         end
 
-      Telegram.send_poll(%{chat_id: to_string(chat_id), question: question, options: names})
+      send_and_remember_poll(chat_id, question, names)
     end
   end
 
@@ -135,7 +135,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
         case generate_custom_poll(chat_id, instruction) do
           {:ok, question, options} ->
-            Telegram.send_poll(%{chat_id: to_string(chat_id), question: question, options: options})
+            send_and_remember_poll(chat_id, question, options)
 
           :error ->
             reply(message, "Minha máquina de enquetes engasgou com essa instrução. Reformula aí. 🐀")
@@ -193,6 +193,17 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   end
 
   def handle(_command, _message), do: :ok
+
+  # O bot não recebe os próprios updates pelo webhook, então a enquete entra
+  # no buffer do grupo aqui — sem isso o /resumo nunca ficaria sabendo dela
+  defp send_and_remember_poll(chat_id, question, options) do
+    Telegram.send_poll(%{chat_id: to_string(chat_id), question: question, options: options})
+
+    GroupMessageCache.add_bot_message(
+      chat_id,
+      ~s([enquete: "#{question}" — opções: #{Enum.join(options, ", ")}])
+    )
+  end
 
   # Texto após o comando: "/enquete melhor pizza" -> "melhor pizza"
   defp command_args(text) do
