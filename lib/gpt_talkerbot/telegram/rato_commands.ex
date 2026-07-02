@@ -64,6 +64,8 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
   def commands, do: @commands
 
+  defp owner_id, do: RuntimeEnvs.get_owner_id()
+
   def handle("humor", %{"chat" => %{"id" => chat_id}} = message) do
     mood = MoodTracker.get_mood(chat_id)
     reply(message, Map.get(@mood_lines, mood, @mood_lines.normal))
@@ -153,32 +155,44 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
   def handle(
         "ratowarn",
-        %{"chat" => %{"id" => chat_id}, "reply_to_message" => %{"from" => target} = replied} =
+        %{
+          "chat" => %{"id" => chat_id},
+          "from" => %{"id" => issuer_id},
+          "reply_to_message" => %{"from" => target} = replied
+        } =
           message
       ) do
-    if target["is_bot"] do
-      reply(message, "Warn em mim? Eu SOU o regulamento. Petição negada. 🐀")
-    else
-      count = Warns.increment(chat_id, target["id"], target["first_name"])
-      mention = mention(target)
-
-      if count >= Warns.limit() do
-        Warns.reset(chat_id, target["id"])
-
-        reply(
-          message,
-          "⚖️ #{mention} atingiu <b>#{Warns.limit()} warns</b>.\n\nMas o Ratobô é misericordioso: ficha limpa, contador zerado, mais uma chance. Não me faça me arrepender. 🐀"
-        )
+    if is_admin?(issuer_id) do
+      if target["is_bot"] do
+        reply(message, "Warn em mim? Eu SOU o regulamento. Petição negada. 🐀")
       else
-        Telegram.send_typing(to_string(chat_id))
-        warn_text = generate_warn(target["first_name"], replied)
-        reply(message, "⚠️ <b>Warn #{count}/#{Warns.limit()}</b> para #{mention}\n\n#{warn_text}")
+        count = Warns.increment(chat_id, target["id"], target["first_name"])
+        mention = mention(target)
+
+        if count >= Warns.limit() do
+          Warns.reset(chat_id, target["id"])
+
+          reply(
+            message,
+            "⚖️ #{mention} atingiu <b>#{Warns.limit()} warns</b>.\n\nMas o Ratobô é misericordioso: ficha limpa, contador zerado, mais uma chance. Não me faça me arrepender. 🐀"
+          )
+        else
+          Telegram.send_typing(to_string(chat_id))
+          warn_text = generate_warn(target["first_name"], replied)
+          reply(message, "⚠️ <b>Warn #{count}/#{Warns.limit()}</b> para #{mention}\n\n#{warn_text}")
+        end
       end
+    else
+      reply(message, ratowarn_admin_only_message())
     end
   end
 
-  def handle("ratowarn", message) do
-    reply(message, "Warn em quem? Responda à mensagem do infrator, não sou vidente. 🐀")
+  def handle("ratowarn", %{"from" => %{"id" => issuer_id}} = message) do
+    if is_admin?(issuer_id) do
+      reply(message, "Warn em quem? Responda à mensagem do infrator, não sou vidente. 🐀")
+    else
+      reply(message, ratowarn_admin_only_message())
+    end
   end
 
   def handle("bangif", %{"chat" => %{"id" => chat_id}, "reply_to_message" => %{"animation" => anim}} = message) do
@@ -289,6 +303,14 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
         "Meu redator interno travou, vai o rascunho cru mesmo:\n\n" <> context
     end
   end
+
+  defp ratowarn_admin_only_message,
+    do: "Somente o admin pode aplicar /ratowarn. Segura o martelo aí. 🐀"
+
+  defp is_admin?(owner_id) when is_integer(owner_id),
+    do: is_admin?(Integer.to_string(owner_id))
+
+  defp is_admin?(user_id), do: user_id == owner_id()
 
   # ClientInputs.SendMessage espera chat_id/message_id como string
   defp reply(%{"chat" => %{"id" => chat_id}, "message_id" => message_id}, text) do
