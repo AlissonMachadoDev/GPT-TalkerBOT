@@ -8,6 +8,7 @@ defmodule GptTalkerbotWeb.Router do
 
   pipeline :telegram_webhook do
     plug GptTalkerbotWeb.Plugs.TelegramSecret
+    plug GptTalkerbotWeb.Plugs.TelegramAllowed
   end
 
   scope "/", GptTalkerbotWeb do

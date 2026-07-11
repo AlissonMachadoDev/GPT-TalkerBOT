@@ -4,152 +4,51 @@ defmodule GptTalkerbotWeb.BotController do
 
   require Logger
 
-  alias GptTalkerbot.{Telegram, Access, ChatMembers, Interjector, MoodTracker, Reactor, RuntimeEnvs}
+  alias GptTalkerbot.{Telegram, Access, ChatMembers, GifMemory, Interjector, MoodTracker, Reactor, RuntimeEnvs}
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.Telegram.{ContentDescriber, RatoCommands}
   alias BotController.Administrator
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
-  defp owner_id, do: RuntimeEnvs.get_owner_id()
-  defp allowed_users, do: RuntimeEnvs.get_allowed_users()
-  defp allowed_groups, do: RuntimeEnvs.get_allowed_groups()
+  @admin_commands ~w(/setproduction /updatevariables /setgrok /setopenai /cleardatabase)
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
 
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "text" => "/setproduction",
-            "from" => %{"id" => user_id}
-          }
-        }
-      ) do
-    if is_admin_allowed?(user_id, chat_id),
-      do: GptTalkerbotWeb.Services.Telegram.set_production_mode()
+  # Os patterns das clauses só discriminam o TIPO do update (texto, legenda,
+  # enquete...); chat_id/from/from_id chegam extraídos pelo TelegramAllowed
+  # em conn.assigns
 
+  def receive(conn, %{"message" => %{"text" => command}})
+      when command in @admin_commands do
+    if conn.assigns.owner?, do: run_admin_command(command, conn.assigns.chat_id)
     send_resp(conn, 204, "")
   rescue
     e ->
-      log_rescue("setproduction", e, __STACKTRACE__)
+      log_rescue(command, e, __STACKTRACE__)
       send_resp(conn, 204, "")
   end
 
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "text" => "/updatevariables",
-            "from" => %{"id" => user_id}
-          }
-        }
-      ) do
-    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.update_variables()
-    send_resp(conn, 204, "")
-  rescue
-    e ->
-      log_rescue("updatevariables", e, __STACKTRACE__)
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "text" => "/setgrok",
-            "from" => %{"id" => user_id}
-          }
-        }
-      ) do
-    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:grok)
-    send_resp(conn, 204, "")
-  rescue
-    e ->
-      log_rescue("setgrok", e, __STACKTRACE__)
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "text" => "/setopenai",
-            "from" => %{"id" => user_id}
-          }
-        }
-      ) do
-    if is_admin_allowed?(user_id, chat_id), do: RuntimeEnvs.set_current_service(:openai)
-    send_resp(conn, 204, "")
-  rescue
-    e ->
-      log_rescue("setopenai", e, __STACKTRACE__)
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "text" => "/cleardatabase",
-            "from" => %{"id" => user_id}
-          }
-        }
-      ) do
-    if is_admin_allowed?(user_id, chat_id) do
-      GptTalkerbot.Memory.wipe_all()
-
-      GptTalkerbotWeb.Services.Telegram.send_message(%{
-        chat_id: to_string(chat_id),
-        text: "🐀 Amnésia total instalada. Conversas, fatos e rancores: tudo formatado."
-      })
-    end
-
-    send_resp(conn, 204, "")
-  rescue
-    e ->
-      log_rescue("cleardatabase", e, __STACKTRACE__)
-      send_resp(conn, 204, "")
-  end
-
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "text" => text,
-            "chat" => %{"id" => chat_id},
-            "from" => %{"id" => user_id, "is_bot" => false}
-          } = message
-        }
-      )
+  def receive(conn, %{"message" => %{"text" => text, "from" => %{"is_bot" => false}} = message})
       when is_binary(text) do
-    name = get_in(message, ["from", "first_name"]) || "Usuário"
-    GroupMessageCache.add_message(chat_id, name, text)
-    ChatMembers.track_async(chat_id, message["from"])
+    %{chat_id: chat_id, from: from, from_id: user_id} = conn.assigns
 
-    allowed? = is_allowed?(user_id, chat_id)
-    if allowed?, do: MoodTracker.note_activity(chat_id)
+    GroupMessageCache.add_message(chat_id, from["first_name"] || "Usuário", text)
+    ChatMembers.track_async(chat_id, from)
+    MoodTracker.note_activity(chat_id)
 
     cond do
-      ratobo?(text) and allowed? ->
+      ratobo?(text) ->
         handle_bot(conn, message)
 
       String.starts_with?(text, "/") ->
-        handle_slash_command(conn, message, text, user_id, chat_id)
-
-      allowed? ->
-        Reactor.maybe_react(chat_id, message["message_id"])
-        Interjector.maybe_interject(chat_id)
-        GptTalkerbot.GifMemory.maybe_send(chat_id)
-        send_resp(conn, 204, "")
+        handle_slash_command(conn, message, text, user_id)
 
       true ->
+        Reactor.maybe_react(chat_id, message["message_id"])
+        Interjector.maybe_interject(chat_id)
+        GifMemory.maybe_send(chat_id)
         send_resp(conn, 204, "")
     end
   rescue
@@ -160,19 +59,13 @@ defmodule GptTalkerbotWeb.BotController do
 
   def receive(
         conn,
-        %{
-          "message" => %{
-            "text" => text,
-            "chat" => %{"id" => chat_id},
-            "from" => %{"username" => "Channel_Bot", "is_bot" => true}
-          } = message
-        }
+        %{"message" => %{"text" => text, "from" => %{"username" => "Channel_Bot", "is_bot" => true}} = message}
       )
       when is_binary(text) do
     name = get_in(message, ["sender_chat", "title"]) || "Canal"
-    GroupMessageCache.add_message(chat_id, name, text)
+    GroupMessageCache.add_message(conn.assigns.chat_id, name, text)
 
-    if ratobo?(text) and is_allowed?(chat_id, chat_id) do
+    if ratobo?(text) do
       handle_bot(conn, message)
     else
       send_resp(conn, 204, "")
@@ -185,29 +78,24 @@ defmodule GptTalkerbotWeb.BotController do
 
   # Mídia com legenda (foto, vídeo, GIF...): a legenda dispara o bot e o
   # conteúdo descrito entra no buffer do grupo
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "caption" => caption,
-            "chat" => %{"id" => chat_id},
-            "from" => %{"id" => user_id, "is_bot" => false} = from
-          } = message
-        }
-      )
+  def receive(conn, %{"message" => %{"caption" => caption, "from" => %{"is_bot" => false}} = message})
       when is_binary(caption) do
-    name = from["first_name"] || "Usuário"
-    GroupMessageCache.add_message(chat_id, name, ContentDescriber.describe(message) || caption)
+    %{chat_id: chat_id, from: from} = conn.assigns
+
+    GroupMessageCache.add_message(
+      chat_id,
+      from["first_name"] || "Usuário",
+      ContentDescriber.describe(message) || caption
+    )
+
     ChatMembers.track_async(chat_id, from)
+    MoodTracker.note_activity(chat_id)
 
-    allowed? = is_allowed?(user_id, chat_id)
-    if allowed?, do: MoodTracker.note_activity(chat_id)
-
-    if allowed? && message["animation"] do
-      GptTalkerbot.GifMemory.remember(chat_id, message["animation"])
+    if message["animation"] do
+      GifMemory.remember(chat_id, message["animation"])
     end
 
-    if ratobo?(caption) and allowed? do
+    if ratobo?(caption) do
       handle_bot(conn, message)
     else
       send_resp(conn, 204, "")
@@ -219,21 +107,11 @@ defmodule GptTalkerbotWeb.BotController do
   end
 
   # Enquetes de usuários entram no buffer do grupo como texto descrito
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "poll" => _poll,
-            "from" => %{"id" => user_id, "is_bot" => false} = from
-          } = message
-        }
-      ) do
-    if is_allowed?(user_id, chat_id) do
-      name = from["first_name"] || "Alguém"
-      GroupMessageCache.add_message(chat_id, name, ContentDescriber.describe(message))
-      ChatMembers.track_async(chat_id, from)
-    end
+  def receive(conn, %{"message" => %{"poll" => _poll, "from" => %{"is_bot" => false}} = message}) do
+    %{chat_id: chat_id, from: from} = conn.assigns
+
+    GroupMessageCache.add_message(chat_id, from["first_name"] || "Alguém", ContentDescriber.describe(message))
+    ChatMembers.track_async(chat_id, from)
 
     send_resp(conn, 204, "")
   rescue
@@ -243,20 +121,11 @@ defmodule GptTalkerbotWeb.BotController do
   end
 
   # GIFs postados no grupo entram na memória do bot (para o envio aleatório)
-  def receive(
-        conn,
-        %{
-          "message" => %{
-            "chat" => %{"id" => chat_id},
-            "animation" => animation,
-            "from" => %{"id" => user_id, "is_bot" => false} = from
-          }
-        }
-      ) do
-    if is_allowed?(user_id, chat_id) do
-      ChatMembers.track_async(chat_id, from)
-      GptTalkerbot.GifMemory.remember(chat_id, animation)
-    end
+  def receive(conn, %{"message" => %{"animation" => animation, "from" => %{"is_bot" => false}}}) do
+    %{chat_id: chat_id, from: from} = conn.assigns
+
+    ChatMembers.track_async(chat_id, from)
+    GifMemory.remember(chat_id, animation)
 
     send_resp(conn, 204, "")
   rescue
@@ -266,12 +135,8 @@ defmodule GptTalkerbotWeb.BotController do
   end
 
   # Service messages de entrada/saída mantêm o registro de membros em dia
-  def receive(
-        conn,
-        %{"message" => %{"chat" => %{"id" => chat_id}, "new_chat_members" => members}}
-      )
-      when is_list(members) do
-    Enum.each(members, &ChatMembers.track(chat_id, &1))
+  def receive(conn, %{"message" => %{"new_chat_members" => members}}) when is_list(members) do
+    Enum.each(members, &ChatMembers.track(conn.assigns.chat_id, &1))
     send_resp(conn, 204, "")
   rescue
     e ->
@@ -279,11 +144,8 @@ defmodule GptTalkerbotWeb.BotController do
       send_resp(conn, 204, "")
   end
 
-  def receive(
-        conn,
-        %{"message" => %{"chat" => %{"id" => chat_id}, "left_chat_member" => user}}
-      ) do
-    ChatMembers.mark_left(chat_id, user)
+  def receive(conn, %{"message" => %{"left_chat_member" => user}}) do
+    ChatMembers.mark_left(conn.assigns.chat_id, user)
     send_resp(conn, 204, "")
   rescue
     e ->
@@ -293,7 +155,7 @@ defmodule GptTalkerbotWeb.BotController do
 
   def receive(conn, _params), do: send_resp(conn, 204, "")
 
-  defp handle_slash_command(conn, message, "/" <> rest, user_id, chat_id) do
+  defp handle_slash_command(conn, message, "/" <> rest, user_id) do
     command =
       rest
       |> String.split(" ", parts: 2)
@@ -305,7 +167,7 @@ defmodule GptTalkerbotWeb.BotController do
     chat_type = get_in(message, ["chat", "type"])
 
     cond do
-      command in RatoCommands.commands() and is_allowed?(user_id, chat_id) ->
+      command in RatoCommands.commands() ->
         RatoCommands.handle(command, message)
 
       chat_type == "private" and Access.is_registered(user_id) and
@@ -338,15 +200,22 @@ defmodule GptTalkerbotWeb.BotController do
 
   defp ratobo?(text), do: Regex.match?(@ratobo_regex, text)
 
-  defp is_admin_allowed?(owner_id, _) when is_integer(owner_id),
-    do: is_admin_allowed?(Integer.to_string(owner_id), nil)
+  defp run_admin_command("/setproduction", _chat_id),
+    do: GptTalkerbotWeb.Services.Telegram.set_production_mode()
 
-  defp is_admin_allowed?(user_id, _), do: user_id == owner_id()
+  defp run_admin_command("/updatevariables", _chat_id), do: RuntimeEnvs.update_variables()
 
-  # Fail closed: se allowed_groups vier vazio (ex.: falha no fetch do SSM),
-  # o bot fica fechado em vez de aberto para o mundo
-  defp is_allowed?(user_id, chat_id) do
-    user_id in allowed_users() or chat_id in allowed_groups()
+  defp run_admin_command("/setgrok", _chat_id), do: RuntimeEnvs.set_current_service(:grok)
+
+  defp run_admin_command("/setopenai", _chat_id), do: RuntimeEnvs.set_current_service(:openai)
+
+  defp run_admin_command("/cleardatabase", chat_id) do
+    GptTalkerbot.Memory.wipe_all()
+
+    GptTalkerbotWeb.Services.Telegram.send_message(%{
+      chat_id: to_string(chat_id),
+      text: "🐀 Amnésia total instalada. Conversas, fatos e rancores: tudo formatado."
+    })
   end
 
   defp log_rescue(context, exception, stacktrace) do
