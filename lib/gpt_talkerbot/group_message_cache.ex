@@ -17,7 +17,15 @@ defmodule GptTalkerbot.GroupMessageCache do
   end
 
   def add_message(chat_id, sender_name, content) do
-    GenServer.cast(__MODULE__, {:add_message, to_string(chat_id), sender_name, content})
+    chat_id = to_string(chat_id)
+
+    # Checagem no processo chamador: o filtro de /ignore_messages não pode
+    # custar um roundtrip pelo GenServer em toda mensagem do grupo
+    if GptTalkerbot.IgnoredPatterns.ignored?(chat_id, content) do
+      :ok
+    else
+      GenServer.cast(__MODULE__, {:add_message, chat_id, sender_name, content})
+    end
   end
 
   def add_bot_message(chat_id, content) do

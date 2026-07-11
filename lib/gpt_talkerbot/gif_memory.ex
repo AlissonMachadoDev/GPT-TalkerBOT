@@ -58,7 +58,8 @@ defmodule GptTalkerbot.GifMemory do
     end
   end
 
-  defp random_gif(chat_id) do
+  @doc "GIF aleatório não banido do chat, ou nil se a coleção está vazia"
+  def random_gif(chat_id) do
     Gif
     |> where([g], g.chat_id == ^to_string(chat_id) and g.banned == false)
     |> order_by(fragment("RANDOM()"))

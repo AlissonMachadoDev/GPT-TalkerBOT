@@ -14,7 +14,7 @@ defmodule GptTalkerbot.ChatMembers do
   require Logger
 
   alias GptTalkerbot.Repo
-  alias GptTalkerbot.ChatMembers.ChatMember
+  alias GptTalkerbot.ChatMembers.{Cache, ChatMember}
   alias GptTalkerbotWeb.Services.Telegram
 
   @max_listed 30
@@ -38,23 +38,23 @@ defmodule GptTalkerbot.ChatMembers do
     if user["is_bot"] do
       :ok
     else
-      upsert(chat_id, id, user["first_name"], user["username"], "active")
+      put_member(chat_id, id, user["first_name"], user["username"], "active")
     end
   end
 
   def track(_chat_id, _user), do: :ok
 
   def mark_left(chat_id, %{"id" => id} = user) do
-    upsert(chat_id, id, user["first_name"], user["username"], "left")
+    put_member(chat_id, id, user["first_name"], user["username"], "left")
   end
 
   def mark_left(_chat_id, _user), do: :ok
 
-  @doc "Membros ativos do chat, mais recentes primeiro"
+  @doc "Membros ativos do chat, em ordem alfabética"
   def list_members(chat_id, limit \\ @max_listed) do
     ChatMember
     |> where([m], m.chat_id == ^to_string(chat_id) and m.status == "active")
-    |> order_by([m], desc: m.updated_at)
+    |> order_by([m], asc: m.first_name)
     |> limit(^limit)
     |> Repo.all()
   end
@@ -78,7 +78,7 @@ defmodule GptTalkerbot.ChatMembers do
       members ->
         lista = Enum.map_join(members, ", ", &"#{&1.first_name} (id #{&1.user_id})")
 
-        "\n\nPessoas deste chat (mais ativas primeiro): " <>
+        "\n\nPessoas deste chat: " <>
           lista <>
           "\nPara mencionar alguém notificando a pessoa, escreva exatamente " <>
           ~s(<a href="tg://user?id=ID">Nome</a> com o id da lista. Use com moderação — ) <>
@@ -98,12 +98,33 @@ defmodule GptTalkerbot.ChatMembers do
   end
 
   defp maybe_seed_admins(chat_id) do
-    exists? =
-      ChatMember
-      |> where([m], m.chat_id == ^to_string(chat_id))
-      |> Repo.exists?()
+    key = {:seeded, to_string(chat_id)}
 
-    unless exists?, do: seed_admins(chat_id)
+    unless Cache.get(key) do
+      exists? =
+        ChatMember
+        |> where([m], m.chat_id == ^to_string(chat_id))
+        |> Repo.exists?()
+
+      unless exists?, do: seed_admins(chat_id)
+      Cache.put(key, true)
+    end
+  end
+
+  # Só toca o banco quando o registro mudou — a tabela é um cadastro de
+  # membros, não um rastro de atividade
+  defp put_member(chat_id, user_id, first_name, username, status) do
+    key = {:member, to_string(chat_id), to_string(user_id)}
+    data = {first_name, username, status}
+
+    if Cache.get(key) == data do
+      :ok
+    else
+      case upsert(chat_id, user_id, first_name, username, status) do
+        {:ok, _} -> Cache.put(key, data)
+        error -> error
+      end
+    end
   end
 
   defp upsert(chat_id, user_id, first_name, username, status) do

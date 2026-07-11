@@ -1,9 +1,9 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Telegram.Message
   alias GptTalkerbotWeb.Services.{Telegram, SpiceChecker}
-  alias GptTalkerbot.{LLM, Memory, MoodTracker, RuntimeEnvs}
+  alias GptTalkerbot.{GifMemory, LLM, Memory, MoodTracker, PostActions, RuntimeEnvs}
   alias GptTalkerbot.Memory.FactExtractor
-  alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, GroupContext}
+  alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.Telegram.HtmlSanitizer
 
@@ -34,30 +34,32 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
     system_prompt =
       Personality.build_system_prompt(user_id, chat_id)
-      |> append_group_context(chat_id)
-      |> append_members(chat_id)
+      |> Kernel.<>(ContextTools.prompt_hint())
+      |> Kernel.<>(PostActions.instruction())
       |> Kernel.<>(BotDefinitions.format_instruction())
 
-    with {:ok, response} <- process_ai_message(user_id, ai_messages, system_prompt) do
-      reply = extract_content(response)
+    with {:ok, response} <- process_ai_message(user_id, chat_id, ai_messages, system_prompt) do
+      {reply, actions} = extract_content(response)
       Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
       GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
       MoodTracker.bump(chat_id)
-      send_message(reply, message)
+      send_reply(reply, actions, message)
     else
       {:error, _} -> send_message(Enum.random(@error_replies), message)
     end
   end
 
-  def process_ai_message(user_id, messages, system_prompt) do
+  def process_ai_message(user_id, chat_id, messages, system_prompt) do
     text = messages |> Enum.map_join(" ", & &1.content)
     provider = SpiceChecker.route(text)
 
-    LLM.complete(messages,
+    LLM.complete_with_tools(messages,
       provider: provider,
       user: user_id,
       prompt: system_prompt,
+      tools: ContextTools.specs(),
+      tool_executor: fn name, args -> ContextTools.execute(name, args, chat_id) end,
       frequency_penalty: 0.5,
       presence_penalty: 0.6,
       max_tokens: if(provider == :grok, do: 2000, else: 1000)
@@ -103,24 +105,52 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   defp extract_content(response) do
-    response
-    |> get_in(["choices", Access.at(0), "message", "content"])
-    |> HtmlSanitizer.truncate()
+    {clean, actions} =
+      response
+      |> get_in(["choices", Access.at(0), "message", "content"])
+      |> PostActions.extract()
+
+    {HtmlSanitizer.truncate(clean), actions}
   end
 
-  defp append_members(prompt, chat_id) do
-    prompt <> GptTalkerbot.ChatMembers.prompt_section(chat_id)
+  defp send_reply(reply, actions, message) do
+    if :gif in actions do
+      send_with_gif(reply, message)
+    else
+      send_message(reply, message)
+    end
   end
 
-  defp append_group_context(prompt, chat_id) do
-    case GroupContext.get_context(chat_id) do
-      "" ->
-        prompt
+  # Limite de caption do Telegram; acima disso o texto vai como mensagem
+  # normal e o GIF sai em seguida, sem legenda
+  @caption_max 1024
 
-      context ->
-        prompt <>
-          "\n\nPano de fundo do grupo — serve só para você entender referências; não traga esses assuntos de volta por conta própria:\n" <>
-          context
+  defp send_with_gif(reply, %{chat_id: chat_id, message_id: message_id} = message) do
+    gif = GifMemory.random_gif(chat_id)
+
+    cond do
+      gif == nil ->
+        send_message(reply, message)
+
+      String.length(reply) <= @caption_max ->
+        %{
+          chat_id: to_string(chat_id),
+          animation: gif.file_id,
+          caption: reply,
+          parse_mode: "HTML",
+          reply_to_message_id: message_id
+        }
+        |> Telegram.send_animation()
+        |> case do
+          {:ok, %{status: 200}} -> :ok
+          # GIF recusado (apagado no Telegram, caption inválida...) não pode
+          # engolir a resposta: ela sai como mensagem de texto normal
+          _ -> send_message(reply, message)
+        end
+
+      true ->
+        send_message(reply, message)
+        Telegram.send_animation(%{chat_id: to_string(chat_id), animation: gif.file_id})
     end
   end
 

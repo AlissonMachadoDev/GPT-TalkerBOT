@@ -25,6 +25,8 @@ defmodule GptTalkerbot.Application do
           GptTalkerbot.Interjector,
           GptTalkerbot.DailySummary,
           GptTalkerbot.GroupMessageCache,
+          GptTalkerbot.ChatMembers.Cache,
+          GptTalkerbot.IgnoredPatterns,
           GptTalkerbot.PromptSettings.GroupContext
         ]
 

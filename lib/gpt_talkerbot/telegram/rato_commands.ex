@@ -11,16 +11,17 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     /sorte    - animação nativa de dado/dardo/caça-níquel
     /ratowarn - warn debochado para a mensagem respondida (perdão aos 6)
     /bangif   - bane da memória o GIF respondido (controle de conteúdo)
+    /ignore_messages <texto> - mensagens contendo o texto ficam fora do histórico (só admin)
   """
 
   require Logger
 
-  alias GptTalkerbot.{ChatMembers, GifMemory, GroupMessageCache, LLM, Memory, MoodTracker, RuntimeEnvs, Warns}
+  alias GptTalkerbot.{ChatMembers, GifMemory, GroupMessageCache, IgnoredPatterns, LLM, Memory, MoodTracker, RuntimeEnvs, Warns}
   alias GptTalkerbot.PromptSettings.{BotDefinitions, GroupContext}
   alias GptTalkerbot.Telegram.HtmlSanitizer
   alias GptTalkerbotWeb.Services.Telegram
 
-  @commands ~w(humor fatos esquece resumo enquete enquete_random sorte ratowarn bangif)
+  @commands ~w(humor fatos esquece resumo enquete enquete_random sorte ratowarn bangif ignore_messages)
 
   @dice_emojis ["🎲", "🎯", "🏀", "⚽", "🎳", "🎰"]
 
@@ -168,19 +169,32 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
       else
         count = Warns.increment(chat_id, target["id"], target["first_name"])
         mention = mention(target)
+        offending = replied["text"] || replied["caption"] || "(mensagem sem texto)"
 
-        if count >= Warns.limit() do
-          Warns.reset(chat_id, target["id"])
-
-          reply(
-            message,
+        response =
+          if count >= Warns.limit() do
             "⚖️ #{mention} atingiu <b>#{Warns.limit()} warns</b>.\n\nMas o Ratobô é misericordioso: ficha limpa, contador zerado, mais uma chance. Não me faça me arrepender. 🐀"
-          )
-        else
-          Telegram.send_typing(to_string(chat_id))
-          warn_text = generate_warn(target["first_name"], replied)
-          reply(message, "⚠️ <b>Warn #{count}/#{Warns.limit()}</b> para #{mention}\n\n#{warn_text}")
-        end
+          else
+            Telegram.send_typing(to_string(chat_id))
+            warn_text = generate_warn(target["first_name"], offending)
+            "⚠️ <b>Warn #{count}/#{Warns.limit()}</b> para #{mention}\n\n#{warn_text}"
+          end
+
+        Warns.record_entry(%{
+          chat_id: to_string(chat_id),
+          user_id: to_string(target["id"]),
+          first_name: target["first_name"],
+          issuer_name: get_in(message, ["from", "first_name"]),
+          offending_message: offending,
+          request_message: message["text"],
+          bot_response: response
+        })
+
+        # O perdão vem depois do registro: o 6º warn também entra na ficha,
+        # já marcado como perdoado junto com os anteriores
+        if count >= Warns.limit(), do: Warns.reset(chat_id, target["id"])
+
+        reply(message, response)
       end
     else
       reply(message, ratowarn_admin_only_message())
@@ -192,6 +206,49 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
       reply(message, "Warn em quem? Responda à mensagem do infrator, não sou vidente. 🐀")
     else
       reply(message, ratowarn_admin_only_message())
+    end
+  end
+
+  def handle(
+        "ignore_messages",
+        %{"chat" => %{"id" => chat_id}, "from" => %{"id" => issuer_id}, "text" => text} = message
+      ) do
+    pattern = command_args(text)
+
+    cond do
+      not is_admin?(issuer_id) ->
+        reply(message, "Só o admin escolhe o que eu finjo não ver. 🐀")
+
+      pattern == "" ->
+        case IgnoredPatterns.list(chat_id) do
+          [] ->
+            reply(
+              message,
+              "Uso: /ignore_messages <texto>. Mensagens contendo o texto ficam fora do meu histórico. A lista está vazia."
+            )
+
+          patterns ->
+            reply(
+              message,
+              "Finjo não ver mensagens contendo:\n" <>
+                Enum.map_join(patterns, "\n", &("• " <> escape_html(&1)))
+            )
+        end
+
+      true ->
+        case IgnoredPatterns.add(chat_id, pattern) do
+          :ok ->
+            reply(
+              message,
+              ~s(Anotado. Mensagens com "#{escape_html(pattern)}" não existem pra mim. 🐀)
+            )
+
+          :already_exists ->
+            reply(message, "Isso eu já finjo não ver.")
+
+          {:error, _} ->
+            reply(message, "Minha caneta de censura falhou. Tenta de novo.")
+        end
     end
   end
 
@@ -260,9 +317,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     |> String.replace(~r/\s*```\z/, "")
   end
 
-  defp generate_warn(name, replied) do
-    offending = replied["text"] || replied["caption"] || "(mensagem sem texto)"
-
+  defp generate_warn(name, offending) do
     user_content = "Infrator: #{name}\nMensagem citada: #{offending}"
 
     case LLM.complete_text(

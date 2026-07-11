@@ -9,7 +9,7 @@ defmodule GptTalkerbot.Warns do
   import Ecto.Query
 
   alias GptTalkerbot.Repo
-  alias GptTalkerbot.Warns.UserWarn
+  alias GptTalkerbot.Warns.{UserWarn, WarnEntry}
 
   @limit 6
 
@@ -37,11 +37,32 @@ defmodule GptTalkerbot.Warns do
     warn.count
   end
 
-  @doc "Zera o contador (o perdão do rato)"
+  @doc "Contadores de warns ativos do chat, maiores primeiro"
+  def list_counts(chat_id) do
+    UserWarn
+    |> where([w], w.chat_id == ^to_string(chat_id) and w.count > 0)
+    |> order_by([w], desc: w.count)
+    |> select([w], {w.first_name, w.count})
+    |> Repo.all()
+  end
+
+  @doc "Registra o dossiê de um warn: mensagem infratora, pedido e resposta do rato"
+  def record_entry(attrs) do
+    %WarnEntry{}
+    |> WarnEntry.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc "Zera o contador e marca as entradas como perdoadas (o perdão do rato)"
   def reset(chat_id, user_id) do
     UserWarn
     |> where([w], w.chat_id == ^to_string(chat_id) and w.user_id == ^to_string(user_id))
     |> Repo.update_all(set: [count: 0, updated_at: DateTime.utc_now()])
+
+    WarnEntry
+    |> where([e], e.chat_id == ^to_string(chat_id) and e.user_id == ^to_string(user_id))
+    |> where([e], not e.forgiven)
+    |> Repo.update_all(set: [forgiven: true, updated_at: DateTime.utc_now()])
 
     :ok
   end

@@ -46,10 +46,16 @@ defmodule GptTalkerbot.Memory do
   end
 
   def save_exchange(chat_id, user_id, user_content, assistant_reply) do
-    Repo.transaction(fn ->
-      insert_message!(chat_id, user_id, "user", user_content)
-      insert_message!(chat_id, user_id, "assistant", assistant_reply)
-    end)
+    # Mensagem sob /ignore_messages não entra na memória de conversa; a
+    # resposta vai junto porque sem a pergunta ela vira fala sem contexto
+    if GptTalkerbot.IgnoredPatterns.ignored?(chat_id, user_content) do
+      {:ok, :ignored}
+    else
+      Repo.transaction(fn ->
+        insert_message!(chat_id, user_id, "user", user_content)
+        insert_message!(chat_id, user_id, "assistant", assistant_reply)
+      end)
+    end
   end
 
   def clear_context(chat_id) do

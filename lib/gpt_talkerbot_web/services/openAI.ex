@@ -15,17 +15,26 @@ defmodule GptTalkerbotWeb.Services.OpenAI do
   def gpt_completion(client, user, messages, settings) do
     final_messages = build_messages(settings[:prompt], messages)
 
-    Tesla.post(client, "/chat/completions", %{
-      "model" => settings[:model] || "gpt-5.4-mini",
-      "messages" => final_messages,
-      "temperature" => settings[:temperature],
-      "frequency_penalty" => settings[:frequency_penalty],
-      "presence_penalty" => settings[:presence_penalty],
-      "max_completion_tokens" => settings[:max_completion_tokens],
-      "user" => user
-    })
+    body =
+      %{
+        "model" => settings[:model] || "gpt-5.4-mini",
+        "messages" => final_messages,
+        "temperature" => settings[:temperature],
+        "frequency_penalty" => settings[:frequency_penalty],
+        "presence_penalty" => settings[:presence_penalty],
+        "max_completion_tokens" => settings[:max_completion_tokens],
+        "user" => user
+      }
+      |> maybe_put_tools(settings[:tools])
+
+    Tesla.post(client, "/chat/completions", body)
     |> handle_response()
   end
+
+  defp maybe_put_tools(body, tools) when is_list(tools) and tools != [],
+    do: Map.put(body, "tools", tools)
+
+  defp maybe_put_tools(body, _), do: body
 
   defp handle_response({:ok, %{status: 200, body: body}}), do: {:ok, body}
   defp handle_response(_), do: {:error, "Erro ao chamar GPT"}

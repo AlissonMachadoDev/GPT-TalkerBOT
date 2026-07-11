@@ -78,10 +78,19 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     post("/sendDice", %{chat_id: chat_id, emoji: emoji})
   end
 
-  @doc "Reposta um GIF pelo file_id"
-  def send_animation(%{chat_id: chat_id, animation: file_id}) do
-    post("/sendAnimation", %{chat_id: chat_id, animation: file_id})
+  @doc "Reposta um GIF pelo file_id, opcionalmente com legenda e reply"
+  def send_animation(%{chat_id: chat_id, animation: file_id} = params) do
+    body =
+      %{chat_id: chat_id, animation: file_id}
+      |> maybe_put(:caption, params[:caption])
+      |> maybe_put(:parse_mode, params[:parse_mode])
+      |> maybe_put(:reply_to_message_id, params[:reply_to_message_id])
+
+    post("/sendAnimation", body)
   end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   @doc "Registra o menu de comandos exibido no autocomplete do Telegram"
   def set_my_commands do
