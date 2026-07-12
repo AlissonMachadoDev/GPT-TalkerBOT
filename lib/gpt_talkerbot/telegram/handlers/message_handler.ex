@@ -40,9 +40,9 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
     with {:ok, response} <- process_ai_message(user_id, chat_id, ai_messages, system_prompt) do
       {reply, actions} = extract_content(response)
+      reply = ensure_text(reply, actions, ai_messages, user_id, chat_id)
       send_reply(reply, actions, message)
-      memory_content = memory_content(reply, actions)
-      Memory.save_exchange(chat_id, user_id, current_msg.content, memory_content)
+      Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
       GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
       MoodTracker.bump(chat_id)
@@ -105,14 +105,35 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-  # Resposta que é só o marcador de GIF vira string vazia depois do strip,
-  # mas content é NOT NULL no histórico — sem isso o changeset falha e a
-  # troca inteira (pergunta incluída) some da memória
-  defp memory_content("", actions) do
-    if :gif in actions, do: "[gif]", else: "..."
+  # Resposta que é só o marcador de GIF vira string vazia depois do strip —
+  # sem isso o GIF sai pro usuário sem legenda nenhuma, e o content vazio
+  # também derruba o validate_required do histórico. Vale a pena pagar uma
+  # segunda completion aqui (caso raro) pra legenda ainda sair da IA
+  @blank_gif_replies [
+    "🐀",
+    "toma",
+    "achei isso pra você",
+    "não tinha o que dizer, mas tinha o GIF"
+  ]
+
+  defp ensure_text("", actions, ai_messages, user_id, chat_id) do
+    if :gif in actions, do: gif_caption(ai_messages, user_id, chat_id), else: "..."
   end
 
-  defp memory_content(reply, _actions), do: reply
+  defp ensure_text(reply, _actions, _ai_messages, _user_id, _chat_id), do: reply
+
+  defp gif_caption(ai_messages, user_id, chat_id) do
+    caption_prompt =
+      Personality.build_system_prompt(user_id, chat_id) <>
+        "\n\nVocê decidiu anexar um GIF a essa resposta mas não escreveu nenhum texto. " <>
+        "Escreva agora só a frase curta que serviria de legenda pro GIF, sem mencionar " <>
+        "o GIF nem o marcador."
+
+    case LLM.complete_text(ai_messages, prompt: caption_prompt, user: user_id, max_tokens: 60) do
+      {:ok, text} when is_binary(text) and text != "" -> HtmlSanitizer.truncate(text)
+      _ -> Enum.random(@blank_gif_replies)
+    end
+  end
 
   defp extract_content(response) do
     {clean, actions} =

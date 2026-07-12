@@ -17,7 +17,9 @@ defmodule GptTalkerbot.PostActions do
 
   @instruction "\n\nPara anexar um GIF aleatório da sua coleção à resposta, termine com o " <>
                  "marcador [[ratobo:gif]] em uma linha própria. Use raramente, só quando um GIF " <>
-                 "somar à piada. Nunca mencione o marcador no texto nem o use em enquetes."
+                 "somar à piada. O marcador nunca pode ser a resposta inteira: escreva sempre " <>
+                 "uma frase de verdade antes dele, que sirva de legenda pro GIF. Nunca mencione " <>
+                 "o marcador no texto nem o use em enquetes."
 
   def instruction, do: @instruction
 
