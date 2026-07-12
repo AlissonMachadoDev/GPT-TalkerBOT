@@ -18,6 +18,16 @@ jobs:
     environment: production
 
     steps:
+      # Falha cedo e com mensagem clara se o secret do bucket não estiver
+      # configurado (senão o erro só aparece lá no fim, como um "Invalid bucket
+      # name" do aws s3 cp).
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.AWS_CODEDEPLOY_BUCKET }}" ]; then
+            echo "::error::Secret AWS_CODEDEPLOY_BUCKET não está configurado. Defina-o com o nome do bucket S3 que hospeda os bundles do CodeDeploy."
+            exit 1
+          fi
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
