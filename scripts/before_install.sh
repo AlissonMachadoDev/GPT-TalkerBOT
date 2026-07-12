@@ -1,27 +1,20 @@
 #!/bin/bash
-set -e  # Exit on error
+set -e
 
-echo "Starting cleanup process..."
+# Nível 1: NÃO paramos nem apagamos a release que está no ar. A nova release
+# chega prebuildada do CI e só é ativada no final (start_application). Aqui só
+# preparamos o diretório de staging que vai receber os arquivos.
+APP_DIR="/opt/gpt_talkerbot"
 
-# Stop the application if it's running
-if [ -f /opt/gpt_talkerbot/gpt_talkerbot/bin/gpt_talkerbot ]; then
-    echo "Stopping existing application..."
-    /opt/gpt_talkerbot/gpt_talkerbot/bin/gpt_talkerbot stop || true
-fi
+echo "Preparing directories..."
+mkdir -p "$APP_DIR/staging" "$APP_DIR/releases"
 
-# Make sure the directory exists
-echo "Ensuring directory exists..."
-mkdir -p /opt/gpt_talkerbot
+# Limpa apenas o staging (restos de um deploy anterior que tenha falhado).
+# releases/ e o symlink current/ — a versão no ar — ficam intactos.
+echo "Cleaning staging (leaving live release untouched)..."
+rm -rf "$APP_DIR/staging"/* "$APP_DIR/staging"/.[!.]* 2>/dev/null || true
 
-# Clean up thoroughly
-echo "Cleaning up old deployment..."
-rm -rf /opt/gpt_talkerbot/*
-rm -rf /opt/gpt_talkerbot/.[!.]*  # Remove hidden files too
+chown -R ubuntu:ubuntu "$APP_DIR/staging" "$APP_DIR/releases"
 
-# Reset permissions
-echo "Setting up permissions..."
-chown -R ubuntu:ubuntu /opt/gpt_talkerbot
-chmod -R 755 /opt/gpt_talkerbot
-
-echo "Before install script completed successfully"
+echo "before_install completed"
 exit 0

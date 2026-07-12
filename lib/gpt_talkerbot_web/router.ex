@@ -12,6 +12,8 @@ defmodule GptTalkerbotWeb.Router do
   end
 
   scope "/", GptTalkerbotWeb do
+    get "/health", HealthController, :index
+
     scope "/api", GptTalkerbotWeb do
       pipe_through :api
     end

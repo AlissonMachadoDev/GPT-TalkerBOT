@@ -1,13 +1,34 @@
 version: 0.0
 os: linux
 
+# Deploy Nível 1 (artefato prebuildado, sem recompilar na instância).
+# O bundle enviado ao CodeDeploy contém:
+#   /release   -> conteúdo de _build/prod/rel/gpt_talkerbot (bin, lib, releases, erts)
+#   /scripts   -> scripts de deploy
+#   /appspec.yml
+#
+# A release nova pousa em staging/ e só é ativada no start_application, que
+# a promove para releases/<id> e gira o symlink current/. releases/ e current/
+# NÃO são gerenciados pelo CodeDeploy — assim a versão no ar fica intocada até
+# a troca atômica.
 files:
-  - source: /
-    destination: /opt/gpt_talkerbot
+  - source: /release
+    destination: /opt/gpt_talkerbot/staging
+    overwrite: true
+  - source: /scripts
+    destination: /opt/gpt_talkerbot/scripts
     overwrite: true
 
 permissions:
-  - object: /opt/gpt_talkerbot
+  - object: /opt/gpt_talkerbot/staging
+    pattern: "**"
+    owner: ubuntu
+    group: ubuntu
+    mode: 755
+    type:
+      - file
+      - directory
+  - object: /opt/gpt_talkerbot/scripts
     pattern: "**"
     owner: ubuntu
     group: ubuntu
@@ -19,21 +40,21 @@ permissions:
 hooks:
   BeforeInstall:
     - location: scripts/before_install.sh
-      timeout: 300
+      timeout: 120
       runas: root
   AfterInstall:
     - location: scripts/after_install.sh
-      timeout: 1800 # Increased timeout
+      timeout: 120
       runas: root
+  ApplicationStop:
+    - location: scripts/stop_application.sh
+      timeout: 60
+      runas: ubuntu
   ApplicationStart:
     - location: scripts/start_application.sh
       timeout: 300
       runas: root
-  ApplicationStop:
-    - location: scripts/stop_application.sh
-      timeout: 300
-      runas: ubuntu
   ValidateService:
     - location: scripts/validate_service.sh
-      timeout: 300
+      timeout: 120
       runas: ubuntu

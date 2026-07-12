@@ -1,9 +1,9 @@
 name: "Deploy to AWS"
 
 on:
+  # Só deploya no push para main e sob demanda. O gatilho pull_request foi
+  # removido: ele fazia PRs contra main deployarem código não-mergeado em prod.
   push:
-    branches: ["main"]
-  pull_request:
     branches: ["main"]
   workflow_dispatch:
 
@@ -43,7 +43,7 @@ jobs:
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+          mix deps.get --only prod
 
       - name: Create Production Release
         env:
@@ -75,18 +75,24 @@ jobs:
             --deployment-style deploymentType=IN_PLACE,deploymentOption=WITHOUT_TRAFFIC_CONTROL \
             --ec2-tag-filters Key=Environment,Type=KEY_AND_VALUE,Value=Production || true
 
-      - name: Create Deployment Package
+      # Empacota a RELEASE JÁ COMPILADA (não o fonte). O bundle vai pro S3 e o
+      # CodeDeploy o baixa via --s3-location — a instância nunca mais recompila.
+      - name: Create Deployment Bundle
         run: |
-          mkdir -p deployment-package
-          cp -r _build/prod/rel/gpt_talkerbot deployment-package/
-          cp appspec.yml deployment-package/
-          cp -r scripts deployment-package/
-          cd deployment-package
-          zip -r ../deployment-package.zip .
+          mkdir -p bundle/release
+          cp -a _build/prod/rel/gpt_talkerbot/. bundle/release/
+          cp -a scripts bundle/scripts
+          cp appspec.yml bundle/appspec.yml
+          (cd bundle && zip -r ../bundle.zip . >/dev/null)
+
+      - name: Upload Bundle to S3
+        run: |
+          aws s3 cp bundle.zip \
+            "s3://${{ secrets.AWS_CODEDEPLOY_BUCKET }}/gpt_talkerbot/${{ github.sha }}.zip"
 
       - name: Create CodeDeploy Deployment
         run: |
           aws deploy create-deployment \
             --application-name gpt_talkerbot \
             --deployment-group-name gpt_talkerbot-production \
-            --github-location repository=${{ github.repository }},commitId=${{ github.sha }}
+            --s3-location bucket=${{ secrets.AWS_CODEDEPLOY_BUCKET }},key=gpt_talkerbot/${{ github.sha }}.zip,bundleType=zip
