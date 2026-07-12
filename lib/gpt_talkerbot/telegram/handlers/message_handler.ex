@@ -40,11 +40,12 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
     with {:ok, response} <- process_ai_message(user_id, chat_id, ai_messages, system_prompt) do
       {reply, actions} = extract_content(response)
-      Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
+      send_reply(reply, actions, message)
+      memory_content = memory_content(reply, actions)
+      Memory.save_exchange(chat_id, user_id, current_msg.content, memory_content)
       GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
       MoodTracker.bump(chat_id)
-      send_reply(reply, actions, message)
     else
       {:error, _} -> send_message(Enum.random(@error_replies), message)
     end
@@ -103,6 +104,15 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       label -> "#{name} (#{label})"
     end
   end
+
+  # Resposta que é só o marcador de GIF vira string vazia depois do strip,
+  # mas content é NOT NULL no histórico — sem isso o changeset falha e a
+  # troca inteira (pergunta incluída) some da memória
+  defp memory_content("", actions) do
+    if :gif in actions, do: "[gif]", else: "..."
+  end
+
+  defp memory_content(reply, _actions), do: reply
 
   defp extract_content(response) do
     {clean, actions} =
