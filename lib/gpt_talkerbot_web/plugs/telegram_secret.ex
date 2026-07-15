@@ -14,7 +14,7 @@ defmodule GptTalkerbotWeb.Plugs.TelegramSecret do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    case Application.get_env(:gpt_talkerbot, :telegram_webhook_secret, "") do
+    case GptTalkerbot.RuntimeEnvs.get_telegram_webhook_secret() do
       "" ->
         Logger.warning("TelegramSecret: telegram_webhook_secret not set, skipping webhook validation")
         conn

@@ -18,6 +18,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
   @defaults %{
     openai_api_key: "",
     grok_api_key: "",
+    telegram_webhook_secret: "",
     using: :grok,
     spice_threshold: 0.35,
     temperature: 1.3,
@@ -60,7 +61,14 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :daily_summary_hour,
     :utc_offset
   ]
-  @string_params [:default_prompt, :owner_id, :grok_reasoning, :openai_model, :grok_model]
+  @string_params [
+    :default_prompt,
+    :owner_id,
+    :grok_reasoning,
+    :openai_model,
+    :grok_model,
+    :telegram_webhook_secret
+  ]
   @integer_list_params [:allowed_groups, :allowed_users]
 
   def start_link(opts) do
@@ -74,6 +82,8 @@ defmodule GptTalkerbot.RuntimeEnvs do
       |> Map.merge(%{
         openai_api_key: Application.get_env(:gpt_talkerbot, :openai_api_key, ""),
         grok_api_key: Application.get_env(:gpt_talkerbot, :grok_api_key, ""),
+        telegram_webhook_secret:
+          Application.get_env(:gpt_talkerbot, :telegram_webhook_secret, @defaults.telegram_webhook_secret),
         default_prompt: Application.get_env(:gpt_talkerbot, :default_prompt, @defaults.default_prompt),
         owner_id: Application.get_env(:gpt_talkerbot, :owner_id, @defaults.owner_id),
         allowed_groups: Application.get_env(:gpt_talkerbot, :allowed_groups, @defaults.allowed_groups),
@@ -91,6 +101,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_current_service, do: get(:using)
   def get_openai_api_key, do: get(:openai_api_key)
   def get_grok_api_key, do: get(:grok_api_key)
+  def get_telegram_webhook_secret, do: get(:telegram_webhook_secret)
   def get_spice_threshold, do: get(:spice_threshold)
   def get_temperature, do: get(:temperature)
   def get_user_labels, do: get(:user_labels)

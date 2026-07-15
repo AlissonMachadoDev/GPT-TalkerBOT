@@ -123,7 +123,7 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     server = Application.get_env(:gpt_talkerbot, :server_host, "")
     set_my_commands()
 
-    case Application.get_env(:gpt_talkerbot, :telegram_webhook_secret, "") do
+    case GptTalkerbot.RuntimeEnvs.get_telegram_webhook_secret() do
       "" -> get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true")
       secret -> get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true&secret_token=#{secret}")
     end
