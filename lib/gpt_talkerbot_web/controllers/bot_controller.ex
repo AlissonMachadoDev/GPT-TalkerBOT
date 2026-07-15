@@ -11,7 +11,7 @@ defmodule GptTalkerbotWeb.BotController do
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
-  @admin_commands ~w(/setproduction /updatevariables /setgrok /setopenai /cleardatabase)
+  @admin_commands ~w(/setproduction /updatevariables /setgrok /setopenai /cleardatabase /resortearhumor)
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
@@ -36,7 +36,6 @@ defmodule GptTalkerbotWeb.BotController do
 
     GroupMessageCache.add_message(chat_id, from["first_name"] || "Usuário", text)
     ChatMembers.track_async(chat_id, from)
-    MoodTracker.note_activity(chat_id)
 
     cond do
       ratobo?(text) ->
@@ -89,7 +88,6 @@ defmodule GptTalkerbotWeb.BotController do
     )
 
     ChatMembers.track_async(chat_id, from)
-    MoodTracker.note_activity(chat_id)
 
     if message["animation"] do
       GifMemory.remember(chat_id, message["animation"])
@@ -208,6 +206,15 @@ defmodule GptTalkerbotWeb.BotController do
   defp run_admin_command("/setgrok", _chat_id), do: RuntimeEnvs.set_current_service(:grok)
 
   defp run_admin_command("/setopenai", _chat_id), do: RuntimeEnvs.set_current_service(:openai)
+
+  defp run_admin_command("/resortearhumor", chat_id) do
+    mood = MoodTracker.reset()
+
+    GptTalkerbotWeb.Services.Telegram.send_message(%{
+      chat_id: to_string(chat_id),
+      text: "🎲 Humor global re-sorteado. Agora eu tô no modo #{mood}."
+    })
+  end
 
   defp run_admin_command("/cleardatabase", chat_id) do
     GptTalkerbot.Memory.wipe_all()

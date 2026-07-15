@@ -53,7 +53,10 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     grumpy: "Péssimo. Não me testa hoje. 🐀",
     excited: "HOJE TÁ BOM DEMAIS! Pergunta qualquer coisa, EU RESPONDO TUDO! ⚡",
     sarcastic: "Ah, meu humor? Impecável. Como sempre. Nota-se, né? 🙄",
-    sleepy: "zzz... hã? tô acordado, tô acordado... o que você queria mesmo? 😴"
+    flertando: "Hoje tô no modo caça-marido. Chega mais que o porão tá quentinho. 😏",
+    nostalgico: "Ai, no meu tempo de esgoto o queijo era queijo... saudade viu. 🧀",
+    fofoqueiro: "Senta que lá vem história. Tenho cada babado guardado nesses fios... 👀",
+    dramatico: "AH, a vida de um rato de metal é uma NOVELA. Uma tragédia em cada válvula. 🎭"
   }
 
   @resumo_instruction """

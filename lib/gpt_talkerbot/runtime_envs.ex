@@ -33,7 +33,6 @@ defmodule GptTalkerbot.RuntimeEnvs do
     always_include_last: 4,
     max_context_messages: 20,
     session_gap_minutes: 60,
-    mood_duration: 10,
     interject_probability: 0.03,
     interject_cooldown_minutes: 30,
     reaction_probability: 0.05,
@@ -41,6 +40,9 @@ defmodule GptTalkerbot.RuntimeEnvs do
     daily_summary_hour: 23,
     utc_offset: -3
   }
+
+  # mood_duration foi removido: o humor agora é sorteado por tempo (a cada 6h)
+  # no MoodTracker, sem contagem de respostas.
 
   @float_params [
     :spice_threshold,
@@ -54,7 +56,6 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :always_include_last,
     :max_context_messages,
     :session_gap_minutes,
-    :mood_duration,
     :interject_cooldown_minutes,
     :daily_summary_hour,
     :utc_offset
@@ -104,7 +105,6 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_always_include_last, do: get(:always_include_last)
   def get_max_context_messages, do: get(:max_context_messages)
   def get_session_gap_minutes, do: get(:session_gap_minutes)
-  def get_mood_duration, do: get(:mood_duration)
   def get_interject_probability, do: get(:interject_probability)
   def get_interject_cooldown_minutes, do: get(:interject_cooldown_minutes)
   def get_reaction_probability, do: get(:reaction_probability)

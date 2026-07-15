@@ -1,139 +1,81 @@
 defmodule GptTalkerbot.MoodTracker do
   @moduledoc """
-  Humor do bot por chat, dirigido por eventos:
+  Humor global do bot, sorteado aleatoriamente a cada 6 horas.
 
-    * cadência — a cada N respostas do bot no chat, um mood aleatório entra
-      (mesmos múltiplos do sistema antigo, agora por chat em vez de global)
-    * insulto dirigido ao bot -> :grumpy
-    * rajada de mensagens no grupo -> :excited
-    * madrugada (hora local 0-5) com mood :normal -> :sleepy
+  Um mood entra em vigor por uma janela de 6h e então é re-sorteado (nunca
+  repetindo o anterior, para a troca ser sempre perceptível). Todos os moods
+  são apenas de tom: modulam a voz das respostas sem nunca cortar conteúdo nem
+  encurtar o que foi pedido.
 
-  Moods não-normais duram RuntimeEnvs.get_mood_duration/0 respostas e
-  decaem para :normal.
+  A lista @moods deve ser mantida em sincronia com @mood_suffixes em
+  GptTalkerbot.PromptSettings.Personality e @mood_lines em
+  GptTalkerbot.Telegram.RatoCommands.
   """
 
   use GenServer
 
-  alias GptTalkerbot.RuntimeEnvs
+  require Logger
 
-  @moods [:normal, :grumpy, :excited, :sarcastic, :sleepy]
+  @moods [
+    :normal,
+    :grumpy,
+    :excited,
+    :sarcastic,
+    :flertando,
+    :nostalgico,
+    :fofoqueiro,
+    :dramatico
+  ]
 
-  # Rajada: este número de mensagens do grupo dentro da janela vira :excited
-  @burst_count 10
-  @burst_window_seconds 60
-
-  @insult_regex ~r/\b(burro|idiota|lixo|inútil|imprestável|merda|bosta|otário|arrombado|fdp|desgraça)\b/iu
+  @rotation_interval_ms 6 * 60 * 60 * 1_000
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "Mood efetivo do chat (já considera o horário para :sleepy)"
-  def get_mood(chat_id) do
-    GenServer.call(__MODULE__, {:get_mood, to_string(chat_id)})
+  @doc "Mood global vigente. O chat_id é ignorado — o humor é o mesmo para todos."
+  def get_mood(_chat_id \\ nil) do
+    GenServer.call(__MODULE__, :get_mood)
   end
 
-  @doc "Registra uma resposta do bot no chat: avança a cadência e o decay"
-  def bump(chat_id) do
-    GenServer.cast(__MODULE__, {:bump, to_string(chat_id)})
-  end
-
-  @doc "Registra atividade do grupo (qualquer mensagem) para detectar rajadas"
-  def note_activity(chat_id) do
-    GenServer.cast(__MODULE__, {:note_activity, to_string(chat_id)})
-  end
-
-  @doc "Reage ao conteúdo de uma mensagem dirigida ao bot (insulto -> :grumpy)"
-  def react_to_text(chat_id, text) when is_binary(text) do
-    if Regex.match?(@insult_regex, text) do
-      set_mood(chat_id, :grumpy)
-    end
-
-    :ok
-  end
-
-  def react_to_text(_chat_id, _text), do: :ok
-
-  def set_mood(chat_id, mood) when mood in @moods do
-    GenServer.cast(__MODULE__, {:set_mood, to_string(chat_id), mood})
-  end
-
-  @doc "Zera o humor e contadores de todos os chats (usado pela limpeza total)"
+  @doc "Re-sorteia o mood imediatamente e retorna o novo mood"
   def reset do
     GenServer.call(__MODULE__, :reset)
   end
 
   @impl true
   def init(_opts) do
-    {:ok, %{}}
+    schedule_rotation()
+    {:ok, %{mood: roll(:normal)}}
   end
 
   @impl true
-  def handle_call(:reset, _from, _state) do
-    {:reply, :ok, %{}}
+  def handle_call(:get_mood, _from, state) do
+    {:reply, state.mood, state}
   end
 
-  def handle_call({:get_mood, chat_id}, _from, state) do
-    entry = Map.get(state, chat_id, new_entry())
-    {:reply, effective_mood(entry.mood), state}
+  def handle_call(:reset, _from, state) do
+    mood = roll(state.mood)
+    {:reply, mood, %{state | mood: mood}}
   end
 
   @impl true
-  def handle_cast({:bump, chat_id}, state) do
-    entry = Map.get(state, chat_id, new_entry())
-    count = entry.count + 1
-
-    {mood, remaining} =
-      cond do
-        rem(count, 50) == 0 -> {:grumpy, mood_duration()}
-        rem(count, 35) == 0 -> {:excited, mood_duration()}
-        rem(count, 20) == 0 -> {:sarcastic, mood_duration()}
-        entry.remaining > 1 -> {entry.mood, entry.remaining - 1}
-        true -> {:normal, 0}
-      end
-
-    {:noreply, Map.put(state, chat_id, %{entry | count: count, mood: mood, remaining: remaining})}
+  def handle_info(:rotate, state) do
+    mood = roll(state.mood)
+    Logger.info("MoodTracker: novo humor sorteado -> #{mood}")
+    schedule_rotation()
+    {:noreply, %{state | mood: mood}}
   end
 
-  def handle_cast({:note_activity, chat_id}, state) do
-    entry = Map.get(state, chat_id, new_entry())
-    now = System.monotonic_time(:second)
-
-    activity =
-      [now | entry.activity]
-      |> Enum.take_while(&(now - &1 <= @burst_window_seconds))
-
-    entry =
-      if length(activity) >= @burst_count and entry.mood == :normal do
-        %{entry | activity: activity, mood: :excited, remaining: mood_duration()}
-      else
-        %{entry | activity: activity}
-      end
-
-    {:noreply, Map.put(state, chat_id, entry)}
+  # Sorteia um mood diferente do atual para que cada janela tenha um humor novo
+  defp roll(current) do
+    case @moods -- [current] do
+      [] -> current
+      others -> Enum.random(others)
+    end
   end
 
-  def handle_cast({:set_mood, chat_id, mood}, state) do
-    entry = Map.get(state, chat_id, new_entry())
-    {:noreply, Map.put(state, chat_id, %{entry | mood: mood, remaining: mood_duration()})}
+  defp schedule_rotation do
+    Process.send_after(self(), :rotate, @rotation_interval_ms)
   end
-
-  defp new_entry do
-    %{mood: :normal, remaining: 0, count: 0, activity: []}
-  end
-
-  # Madrugada só se sobrepõe ao :normal — um mood dirigido por evento vence o sono
-  defp effective_mood(:normal) do
-    if local_hour() in 0..5, do: :sleepy, else: :normal
-  end
-
-  defp effective_mood(mood), do: mood
-
-  defp local_hour do
-    DateTime.utc_now()
-    |> DateTime.add(RuntimeEnvs.get_utc_offset() * 3600)
-    |> Map.get(:hour)
-  end
-
-  defp mood_duration, do: RuntimeEnvs.get_mood_duration()
 end

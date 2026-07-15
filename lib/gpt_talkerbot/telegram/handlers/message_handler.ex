@@ -1,7 +1,7 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Telegram.Message
   alias GptTalkerbotWeb.Services.{Telegram, SpiceChecker}
-  alias GptTalkerbot.{GifMemory, LLM, Memory, MoodTracker, PostActions, RuntimeEnvs}
+  alias GptTalkerbot.{GifMemory, LLM, Memory, PostActions, RuntimeEnvs}
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
   alias GptTalkerbot.GroupMessageCache
@@ -25,7 +25,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           from: %{telegram_id: user_id}
         } = message
       ) do
-    MoodTracker.react_to_text(chat_id, text)
     Telegram.send_typing(chat_id)
 
     current_msg = build_current_message(message)
@@ -45,7 +44,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
       GroupMessageCache.add_bot_message(chat_id, reply)
       FactExtractor.extract_and_save(user_id, text)
-      MoodTracker.bump(chat_id)
     else
       {:error, _} -> send_message(Enum.random(@error_replies), message)
     end
