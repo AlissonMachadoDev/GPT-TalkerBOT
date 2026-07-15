@@ -44,8 +44,15 @@ defmodule GptTalkerbotWeb.Services.SpiceChecker do
   """
   def route(text) do
     case score(text) do
-      {:ok, s} -> if s > threshold(), do: :grok, else: :openai
-      {:error, _} -> RuntimeEnvs.get_current_service()
+      {:ok, s} ->
+        provider = if s > threshold(), do: :grok, else: :openai
+        Logger.info("SpiceChecker: score=#{Float.round(s, 4)} threshold=#{threshold()} -> #{provider}")
+        provider
+
+      {:error, _} ->
+        provider = RuntimeEnvs.get_current_service()
+        Logger.info("SpiceChecker: score unavailable, fallback -> #{provider}")
+        provider
     end
   end
 
