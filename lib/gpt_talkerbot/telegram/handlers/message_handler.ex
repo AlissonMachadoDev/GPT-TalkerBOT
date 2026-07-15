@@ -1,6 +1,7 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Telegram.Message
-  alias GptTalkerbotWeb.Services.{Telegram, SpiceChecker}
+  # SpiceChecker desativado no fluxo de chat (ver process_ai_message)
+  alias GptTalkerbotWeb.Services.Telegram
   alias GptTalkerbot.{GifMemory, LLM, Memory, PostActions, RuntimeEnvs}
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
@@ -50,8 +51,13 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   def process_ai_message(user_id, chat_id, messages, system_prompt) do
-    text = messages |> Enum.map_join(" ", & &1.content)
-    provider = SpiceChecker.route(text)
+    # SpiceChecker desativado: o chat responde sempre pelo Grok. O OpenAI ficou
+    # só para a extração de fatos (ver FactExtractor). Para reativar o
+    # roteamento por moderação, descomente as duas linhas abaixo e troque
+    # `provider = :grok` por `provider = SpiceChecker.route(text)`.
+    # text = messages |> Enum.map_join(" ", & &1.content)
+    # provider = SpiceChecker.route(text)
+    provider = :grok
 
     LLM.complete_with_tools(messages,
       provider: provider,

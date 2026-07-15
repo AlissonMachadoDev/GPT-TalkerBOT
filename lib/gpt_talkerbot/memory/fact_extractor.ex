@@ -35,10 +35,10 @@ defmodule GptTalkerbot.Memory.FactExtractor do
 
     with {:ok, content} <-
            LLM.complete_text(messages,
+             provider: :openai,
              user: user_id,
              temperature: 0.2,
-             max_tokens: 200,
-             reasoning_effort: "none"
+             max_tokens: 200
            ),
          {:ok, facts} when is_list(facts) <- Jason.decode(String.trim(content)) do
       Enum.each(facts, fn
