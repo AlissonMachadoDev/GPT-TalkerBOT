@@ -55,4 +55,64 @@ defmodule GptTalkerbot.ChatMembersTest do
 
     assert ChatMembers.list_names(@chat_id) == ["Ana", "Beto", "Zeca"]
   end
+
+  describe "atividade e frequência" do
+    test "track_activity incrementa o contador a cada mensagem" do
+      ChatMembers.track_activity(@chat_id, user(111, "Marcela"))
+      ChatMembers.track_activity(@chat_id, user(111, "Marcela"))
+
+      assert Repo.get_by(ChatMember, chat_id: @chat_id, user_id: "111").message_count == 2
+    end
+
+    test "bot não entra na contagem nem no cadastro" do
+      ChatMembers.track_activity(@chat_id, %{
+        "id" => 999,
+        "first_name" => "OutroBot",
+        "is_bot" => true
+      })
+
+      assert Repo.get_by(ChatMember, chat_id: @chat_id, user_id: "999") == nil
+    end
+
+    test "list_frequent_members corta quem fala pouco" do
+      ChatMembers.track(@chat_id, user(1, "Tagarela"))
+      ChatMembers.track(@chat_id, user(2, "Mediana"))
+      ChatMembers.track(@chat_id, user(3, "Sumida"))
+      set_count("1", 100)
+      set_count("2", 30)
+      set_count("3", 4)
+
+      names = ChatMembers.list_frequent_members(@chat_id) |> Enum.map(& &1.first_name)
+
+      assert Enum.sort(names) == ["Mediana", "Tagarela"]
+    end
+  end
+
+  describe "filter_frequent/1 (corte puro)" do
+    defp member(count), do: %{message_count: count}
+
+    test "corte relativo: pelo menos 25% do mais falante" do
+      assert ChatMembers.filter_frequent([member(100), member(25), member(24)]) ==
+               [member(100), member(25)]
+    end
+
+    test "grupo morno: vale o mínimo absoluto de 5 mensagens" do
+      assert ChatMembers.filter_frequent([member(8), member(5), member(4)]) ==
+               [member(8), member(5)]
+    end
+
+    test "sem contadores ainda, ninguém é frequente" do
+      assert ChatMembers.filter_frequent([member(0), member(nil)]) == []
+    end
+
+    test "lista vazia não quebra" do
+      assert ChatMembers.filter_frequent([]) == []
+    end
+  end
+
+  defp set_count(user_id, count) do
+    Repo.get_by(ChatMember, chat_id: @chat_id, user_id: user_id)
+    |> Ecto.Changeset.change(message_count: count)
+    |> Repo.update!()
+  end
 end

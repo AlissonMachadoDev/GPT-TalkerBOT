@@ -22,17 +22,35 @@ defmodule GptTalkerbot.ChatMembers do
   @doc """
   Registra/atualiza um membro a partir do "from" cru do update, em background.
   Na primeira vez que o chat aparece, semeia o registro com os admins.
+
+  Todo call site é uma mensagem real chegando, então também conta a
+  atividade — é o que alimenta list_frequent_members/2.
   """
   def track_async(chat_id, %{"id" => _} = user) do
     Task.start(fn ->
       maybe_seed_admins(chat_id)
-      track(chat_id, user)
+      track_activity(chat_id, user)
     end)
 
     :ok
   end
 
   def track_async(_chat_id, _user), do: :ok
+
+  @doc "Registra o membro e incrementa o contador de mensagens dele"
+  def track_activity(chat_id, %{"id" => id} = user) do
+    track(chat_id, user)
+
+    unless user["is_bot"] do
+      ChatMember
+      |> where([m], m.chat_id == ^to_string(chat_id) and m.user_id == ^to_string(id))
+      |> Repo.update_all(inc: [message_count: 1])
+    end
+
+    :ok
+  end
+
+  def track_activity(_chat_id, _user), do: :ok
 
   def track(chat_id, %{"id" => id} = user) do
     if user["is_bot"] do
@@ -66,6 +84,34 @@ defmodule GptTalkerbot.ChatMembers do
     |> Enum.reject(&is_nil/1)
   end
 
+  # Frequente = falou pelo menos @min_messages vezes E pelo menos
+  # @frequent_share do volume do membro mais falante do chat
+  @min_messages 5
+  @frequent_share 0.25
+
+  @doc """
+  Membros ativos que participam de verdade da conversa. Todos entram com
+  peso igual — quem chama sorteia uniformemente; a frequência só decide
+  quem está no páreo, não quantas vezes aparece.
+  """
+  def list_frequent_members(chat_id, limit \\ @max_listed) do
+    chat_id
+    |> list_members(limit)
+    |> filter_frequent()
+  end
+
+  @doc false
+  def filter_frequent(members) do
+    top =
+      members
+      |> Enum.map(&(&1.message_count || 0))
+      |> Enum.max(fn -> 0 end)
+
+    cutoff = max(@min_messages, ceil(top * @frequent_share))
+
+    Enum.filter(members, &((&1.message_count || 0) >= cutoff))
+  end
+
   @doc """
   Bloco pronto para system prompt: quem está no chat + como mencionar
   com notificação. Retorna "" se o chat ainda não tem membros conhecidos.
@@ -93,7 +139,9 @@ defmodule GptTalkerbot.ChatMembers do
         Enum.each(admins, fn %{"user" => user} -> track(chat_id, user) end)
 
       {:error, reason} ->
-        Logger.warning("ChatMembers: failed to fetch administrators for #{chat_id}: #{inspect(reason)}")
+        Logger.warning(
+          "ChatMembers: failed to fetch administrators for #{chat_id}: #{inspect(reason)}"
+        )
     end
   end
 
@@ -138,7 +186,12 @@ defmodule GptTalkerbot.ChatMembers do
     })
     |> Repo.insert(
       on_conflict: [
-        set: [first_name: first_name, username: username, status: status, updated_at: DateTime.utc_now()]
+        set: [
+          first_name: first_name,
+          username: username,
+          status: status,
+          updated_at: DateTime.utc_now()
+        ]
       ],
       conflict_target: [:chat_id, :user_id]
     )

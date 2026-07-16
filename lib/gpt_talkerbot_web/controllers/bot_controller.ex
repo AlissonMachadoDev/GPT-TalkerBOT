@@ -4,14 +4,24 @@ defmodule GptTalkerbotWeb.BotController do
 
   require Logger
 
-  alias GptTalkerbot.{Telegram, Access, ChatMembers, GifMemory, Interjector, MoodTracker, Reactor, RuntimeEnvs}
+  alias GptTalkerbot.{
+    Telegram,
+    Access,
+    ChatMembers,
+    GifMemory,
+    Interjector,
+    MoodTracker,
+    Reactor,
+    RuntimeEnvs
+  }
+
   alias GptTalkerbot.GroupMessageCache
   alias GptTalkerbot.Telegram.{ContentDescriber, RatoCommands}
   alias BotController.Administrator
 
   @ratobo_regex ~r/rato\s*b[oôóò]t?/iu
 
-  @admin_commands ~w(/setproduction /updatevariables /setgrok /setopenai /cleardatabase /resortearhumor)
+  @admin_commands ~w(/setproduction /updatevariables /showvariables /setgrok /setopenai /cleardatabase /resortearhumor)
 
   @private_commands Administrator.private_commands()
   @group_commands Administrator.group_commands()
@@ -58,7 +68,11 @@ defmodule GptTalkerbotWeb.BotController do
 
   def receive(
         conn,
-        %{"message" => %{"text" => text, "from" => %{"username" => "Channel_Bot", "is_bot" => true}} = message}
+        %{
+          "message" =>
+            %{"text" => text, "from" => %{"username" => "Channel_Bot", "is_bot" => true}} =
+              message
+        }
       )
       when is_binary(text) do
     name = get_in(message, ["sender_chat", "title"]) || "Canal"
@@ -77,7 +91,9 @@ defmodule GptTalkerbotWeb.BotController do
 
   # Mídia com legenda (foto, vídeo, GIF...): a legenda dispara o bot e o
   # conteúdo descrito entra no buffer do grupo
-  def receive(conn, %{"message" => %{"caption" => caption, "from" => %{"is_bot" => false}} = message})
+  def receive(conn, %{
+        "message" => %{"caption" => caption, "from" => %{"is_bot" => false}} = message
+      })
       when is_binary(caption) do
     %{chat_id: chat_id, from: from} = conn.assigns
 
@@ -108,7 +124,12 @@ defmodule GptTalkerbotWeb.BotController do
   def receive(conn, %{"message" => %{"poll" => _poll, "from" => %{"is_bot" => false}} = message}) do
     %{chat_id: chat_id, from: from} = conn.assigns
 
-    GroupMessageCache.add_message(chat_id, from["first_name"] || "Alguém", ContentDescriber.describe(message))
+    GroupMessageCache.add_message(
+      chat_id,
+      from["first_name"] || "Alguém",
+      ContentDescriber.describe(message)
+    )
+
     ChatMembers.track_async(chat_id, from)
 
     send_resp(conn, 204, "")
@@ -202,6 +223,14 @@ defmodule GptTalkerbotWeb.BotController do
     do: GptTalkerbotWeb.Services.Telegram.set_production_mode()
 
   defp run_admin_command("/updatevariables", _chat_id), do: RuntimeEnvs.update_variables()
+
+  # Sem parse_mode: labels e valores podem conter < > & que quebrariam o HTML
+  defp run_admin_command("/showvariables", chat_id) do
+    GptTalkerbotWeb.Services.Telegram.send_message(%{
+      chat_id: to_string(chat_id),
+      text: "🐀 Variáveis em vigor:\n\n" <> RuntimeEnvs.format_dump()
+    })
+  end
 
   defp run_admin_command("/setgrok", _chat_id), do: RuntimeEnvs.set_current_service(:grok)
 

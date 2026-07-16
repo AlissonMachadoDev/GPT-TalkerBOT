@@ -64,6 +64,42 @@ defmodule GptTalkerbot.Memory do
     |> Repo.delete_all()
   end
 
+  # Janela de busca do forget_by_content: o alvo é sempre coisa recente
+  @forget_scan_limit 200
+
+  @doc """
+  Apaga do histórico do chat as mensagens com exatamente esse conteúdo
+  (qualquer role — a resposta podre e os reenvios dela). A comparação
+  ignora tags HTML e espaços das pontas, porque o Telegram devolve o texto
+  exibido sem as tags que foram enviadas. Retorna quantas apagou.
+  """
+  def forget_by_content(chat_id, text) do
+    target = normalize_content(text)
+
+    ids =
+      ConversationMessage
+      |> where([m], m.chat_id == ^chat_id)
+      |> order_by([m], desc: m.inserted_at)
+      |> limit(@forget_scan_limit)
+      |> Repo.all()
+      |> Enum.filter(&(normalize_content(&1.content) == target))
+      |> Enum.map(& &1.id)
+
+    {count, _} =
+      ConversationMessage
+      |> where([m], m.id in ^ids)
+      |> Repo.delete_all()
+
+    count
+  end
+
+  @doc false
+  def normalize_content(text) do
+    text
+    |> String.replace(~r/<[^>]+>/, "")
+    |> String.trim()
+  end
+
   defp insert_message!(chat_id, user_id, role, content) do
     %ConversationMessage{}
     |> ConversationMessage.changeset(%{

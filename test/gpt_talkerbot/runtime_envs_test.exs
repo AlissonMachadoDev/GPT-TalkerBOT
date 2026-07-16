@@ -27,4 +27,25 @@ defmodule GptTalkerbot.RuntimeEnvsTest do
       assert RuntimeEnvs.parse_user_labels("") == %{}
     end
   end
+
+  describe "dump/0 e format_dump/0" do
+    test "mascara todos os segredos" do
+      dump = RuntimeEnvs.dump()
+
+      for key <- [:openai_api_key, :grok_api_key, :telegram_webhook_secret] do
+        assert dump[key] =~ ~r/^\(vazia\)$|^definida \(\d+ chars\)$/
+      end
+    end
+
+    test "resume o prompt em tamanho em vez de despejar o conteúdo" do
+      assert RuntimeEnvs.dump()[:default_prompt] =~ ~r/^\(vazio\)$|^\(\d+ chars\)$/
+    end
+
+    test "formata uma variável por linha" do
+      formatted = RuntimeEnvs.format_dump()
+
+      assert formatted =~ ~r/^temperature: /m
+      assert formatted =~ ~r/^grok_model: /m
+    end
+  end
 end

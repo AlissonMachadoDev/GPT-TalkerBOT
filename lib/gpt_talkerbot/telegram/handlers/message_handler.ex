@@ -1,4 +1,6 @@
 defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
+  require Logger
+
   alias GptTalkerbot.Telegram.Message
   # SpiceChecker desativado no fluxo de chat (ver process_ai_message)
   alias GptTalkerbotWeb.Services.Telegram
@@ -6,7 +8,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
   alias GptTalkerbot.GroupMessageCache
-  alias GptTalkerbot.Telegram.HtmlSanitizer
+  alias GptTalkerbot.Telegram.{HtmlSanitizer, RichMessages}
 
   @behaviour GptTalkerbot.Telegram.Handlers
 
@@ -27,6 +29,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         } = message
       ) do
     Telegram.send_typing(chat_id)
+    maybe_send_thinking_draft(message)
 
     current_msg = build_current_message(message)
     history = Memory.get_context(chat_id, user_id, text)
@@ -36,14 +39,26 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       Personality.build_system_prompt(user_id, chat_id)
       |> Kernel.<>(ContextTools.prompt_hint())
       |> Kernel.<>(PostActions.instruction())
-      |> Kernel.<>(BotDefinitions.format_instruction())
+      |> Kernel.<>(format_instruction_for(message))
 
     with {:ok, response} <- process_ai_message(user_id, chat_id, ai_messages, system_prompt) do
       {reply, actions} = extract_content(response)
       reply = ensure_text(reply, actions, ai_messages, user_id, chat_id)
-      send_reply(reply, actions, message)
-      Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
-      GroupMessageCache.add_bot_message(chat_id, reply)
+
+      case send_reply(reply, actions, message) do
+        :ok ->
+          Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
+          GroupMessageCache.add_bot_message(chat_id, reply)
+
+        {:error, reason} ->
+          # Resposta que o Telegram recusou nunca chegou ao chat: gravar no
+          # histórico faria o modelo acreditar num diálogo que não houve — e
+          # era assim que respostas envenenadas se reinfiltravam no contexto
+          Logger.warning(
+            "MessageHandler: reply not delivered, not saved to context: #{inspect(reason)}"
+          )
+      end
+
       FactExtractor.extract_and_save(user_id, text)
     else
       {:error, _} -> send_message(Enum.random(@error_replies), message)
@@ -65,8 +80,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       prompt: system_prompt,
       tools: ContextTools.specs(),
       tool_executor: fn name, args -> ContextTools.execute(name, args, chat_id) end,
-      frequency_penalty: 0.5,
-      presence_penalty: 0.6,
+      # Só chegam ao OpenAI (o LLM ignora penalties no branch do Grok).
+      # Valores altos acumulam ao longo da geração e degeneram texto longo
+      # e repetitivo (tabelas) — 0.2 segura repetição sem esse risco
+      frequency_penalty: 0.2,
+      presence_penalty: 0.2,
       max_tokens: if(provider == :grok, do: 2000, else: 1000)
     )
   end
@@ -148,11 +166,74 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     {HtmlSanitizer.truncate(clean), actions}
   end
 
+  # No privado a resposta vira rich message em Markdown (tabelas, títulos,
+  # listas); no grupo continua parse_mode HTML, que não aceita nada disso
+  defp format_instruction_for(%Message{chat_type: "private"}),
+    do: BotDefinitions.rich_format_instruction()
+
+  defp format_instruction_for(_message), do: BotDefinitions.format_instruction()
+
+  # Draft com o bloco "thinking" nativo (Bot API 10.1) — a API só aceita em
+  # chat privado; no grupo fica o "digitando..." de sempre. Fire-and-forget:
+  # se a chamada falhar, o typing já cobre o feedback.
+  defp maybe_send_thinking_draft(%Message{
+         chat_type: "private",
+         chat_id: chat_id,
+         message_id: message_id
+       }) do
+    with {chat, ""} <- Integer.parse(chat_id),
+         {draft, ""} <- Integer.parse(message_id) do
+      Telegram.send_rich_message_draft(%{
+        chat_id: chat,
+        draft_id: draft,
+        rich_message: RichMessages.thinking_draft("Farejando uma resposta... 🐀")
+      })
+    end
+  end
+
+  defp maybe_send_thinking_draft(_message), do: :ok
+
   defp send_reply(reply, actions, message) do
-    if :gif in actions do
-      send_with_gif(reply, message)
-    else
-      send_message(reply, message)
+    result =
+      cond do
+        :gif in actions -> send_with_gif(reply, message)
+        message.chat_type == "private" -> send_rich_reply(reply, message)
+        true -> send_message(reply, message)
+      end
+
+    delivered(result)
+  end
+
+  # Normaliza o resultado do envio: só conta como entregue o que o
+  # Telegram aceitou — é o que decide se a resposta entra no histórico
+  defp delivered(:ok), do: :ok
+  defp delivered({:ok, %{status: 200}}), do: :ok
+  defp delivered({:ok, %{status: status, body: body}}), do: {:error, {status, body}}
+  defp delivered(other), do: {:error, other}
+
+  # No privado o draft "thinking" precisa ser finalizado com sendRichMessage —
+  # uma mensagem comum deixaria o rascunho evaporar sem virar resposta.
+  # Rich recusada não pode calar o rato: a resposta é Markdown, então o
+  # fallback vai sem parse_mode (símbolos crus, mas nunca silêncio).
+  defp send_rich_reply(reply, %{chat_id: chat_id, message_id: message_id} = message) do
+    payload =
+      %{chat_id: chat_id, rich_message: RichMessages.markdown(reply)}
+      |> put_reply_parameters(message_id)
+
+    case Telegram.send_rich_message(payload) do
+      {:ok, %{status: 200}} -> :ok
+      _ -> send_plain_message(reply, message)
+    end
+  end
+
+  defp send_plain_message(text, %{chat_id: chat_id, message_id: message_id}) do
+    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id})
+  end
+
+  defp put_reply_parameters(payload, message_id) do
+    case Integer.parse(message_id) do
+      {id, ""} -> Map.put(payload, :reply_parameters, %{message_id: id})
+      _ -> payload
     end
   end
 
@@ -184,12 +265,45 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         end
 
       true ->
-        send_message(reply, message)
+        # O que decide a entrega é o texto; o GIF avulso é bônus
+        result = send_message(reply, message)
         Telegram.send_animation(%{chat_id: to_string(chat_id), animation: gif.file_id})
+        result
     end
   end
 
-  defp send_message(text, %{chat_id: chat_id, message_id: message_id}) do
-    Telegram.send_message(%{chat_id: chat_id, text: text, reply_to_message_id: message_id, parse_mode: "HTML"})
+  defp send_message(text, %{chat_id: chat_id, message_id: message_id} = message) do
+    if RichMessages.needs_rich_html?(text) do
+      send_rich_html(text, message)
+    else
+      Telegram.send_message(%{
+        chat_id: chat_id,
+        text: text,
+        reply_to_message_id: message_id,
+        parse_mode: "HTML"
+      })
+    end
+  end
+
+  # HTML com bloco que o parse_mode não reconhece (tabela, lista, título)
+  # vai como rich message, que reconhece. Se ela for recusada, os blocos
+  # são achatados pra texto e a resposta sai assim mesmo: nunca silêncio.
+  defp send_rich_html(text, %{chat_id: chat_id, message_id: message_id}) do
+    payload =
+      %{chat_id: chat_id, rich_message: RichMessages.from_html(text)}
+      |> put_reply_parameters(message_id)
+
+    case Telegram.send_rich_message(payload) do
+      {:ok, %{status: 200}} ->
+        :ok
+
+      _ ->
+        Telegram.send_message(%{
+          chat_id: chat_id,
+          text: RichMessages.flatten_html(text),
+          reply_to_message_id: message_id,
+          parse_mode: "HTML"
+        })
+    end
   end
 end

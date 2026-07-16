@@ -9,6 +9,12 @@ defmodule GptTalkerbot.Telegram.ContentDescriber do
 
   def describe(%{"text" => text}) when is_binary(text) and text != "", do: text
 
+  def describe(%{"rich_message" => rich_message}) when is_map(rich_message) do
+    rich_message
+    |> rich_message_text()
+    |> blank_to_nil()
+  end
+
   def describe(params) when is_map(params) do
     case media_tag(params) do
       nil ->
@@ -23,6 +29,54 @@ defmodule GptTalkerbot.Telegram.ContentDescriber do
   end
 
   def describe(_params), do: nil
+
+  defp rich_message_text(%{"blocks" => blocks}) when is_list(blocks) do
+    blocks
+    |> Enum.map(&rich_block_text/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp rich_message_text(%{"html" => html}) when is_binary(html), do: strip_markup(html)
+  defp rich_message_text(%{"markdown" => markdown}) when is_binary(markdown), do: markdown
+  defp rich_message_text(_rich_message), do: ""
+
+  defp rich_block_text(%{"type" => "table", "cells" => rows} = table) when is_list(rows) do
+    caption = table["caption"]
+
+    body =
+      rows
+      |> Enum.map(fn row ->
+        row
+        |> List.wrap()
+        |> Enum.map(&rich_cell_text/1)
+        |> Enum.join(" | ")
+      end)
+      |> Enum.join("\n")
+
+    [caption, body]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.join("\n")
+  end
+
+  defp rich_block_text(%{"text" => text}) when is_binary(text), do: text
+  defp rich_block_text(_block), do: ""
+
+  defp rich_cell_text(%{"text" => text}) when is_binary(text), do: text
+  defp rich_cell_text(text) when is_binary(text), do: text
+  defp rich_cell_text(_cell), do: ""
+
+  defp strip_markup(markup) do
+    markup
+    |> String.replace(~r/<br\s*\/?>/i, "\n")
+    |> String.replace(~r/<\/t[dh]>/i, " | ")
+    |> String.replace(~r/<\/(?:tr|p|li|h[1-6])>/i, "\n")
+    |> String.replace(~r/<[^>]+>/, "")
+    |> String.trim()
+  end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(text), do: text
 
   defp media_tag(%{"poll" => %{"question" => question} = poll}) do
     options =

@@ -34,6 +34,14 @@ defmodule GptTalkerbot.Telegram.HtmlSanitizerTest do
     assert String.ends_with?(result, "</i></b>")
   end
 
+  test "fecha tag que o LLM deixou aberta mesmo sem truncar" do
+    assert HtmlSanitizer.truncate("<b>oi", 100) == "<b>oi</b>"
+  end
+
+  test "fecha tags aninhadas deixadas abertas dentro do limite" do
+    assert HtmlSanitizer.truncate("<b>oi <i>sumido", 100) == "<b>oi <i>sumido</i></b>"
+  end
+
   test "não fecha tags que já estão fechadas" do
     text = "<b>ok</b> " <> String.duplicate("a", 50)
     result = HtmlSanitizer.truncate(text, 20)

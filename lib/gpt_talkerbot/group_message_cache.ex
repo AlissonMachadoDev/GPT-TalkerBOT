@@ -41,6 +41,20 @@ defmodule GptTalkerbot.GroupMessageCache do
     GenServer.call(__MODULE__, :reset)
   end
 
+  @doc """
+  Remove do buffer (e do espelho persistido) as mensagens do chat com esse
+  conteúdo — comparação sem tags HTML, igual à Memory.forget_by_content/2.
+  Retorna quantas saíram do buffer.
+  """
+  def forget(chat_id, content) do
+    GenServer.call(__MODULE__, {:forget, to_string(chat_id), content})
+  end
+
+  @doc "Esvazia o buffer de um único chat (e o espelho persistido dele)"
+  def clear(chat_id) do
+    GenServer.call(__MODULE__, {:clear, to_string(chat_id)})
+  end
+
   @impl true
   def init(_opts) do
     {:ok, %{}}
@@ -55,6 +69,33 @@ defmodule GptTalkerbot.GroupMessageCache do
     {messages, state} = ensure_loaded(state, chat_id)
     recent = messages |> Enum.take(-count)
     {:reply, recent, state}
+  end
+
+  def handle_call({:clear, chat_id}, _from, state) do
+    GroupMessage
+    |> where([m], m.chat_id == ^chat_id)
+    |> Repo.delete_all()
+
+    {:reply, :ok, Map.put(state, chat_id, [])}
+  end
+
+  def handle_call({:forget, chat_id, content}, _from, state) do
+    target = GptTalkerbot.Memory.normalize_content(content)
+
+    {messages, state} = ensure_loaded(state, chat_id)
+
+    {removed, kept} =
+      Enum.split_with(messages, &(GptTalkerbot.Memory.normalize_content(&1.content) == target))
+
+    unless removed == [] do
+      contents = removed |> Enum.map(& &1.content) |> Enum.uniq()
+
+      GroupMessage
+      |> where([m], m.chat_id == ^chat_id and m.content in ^contents)
+      |> Repo.delete_all()
+    end
+
+    {:reply, length(removed), Map.put(state, chat_id, kept)}
   end
 
   @impl true
@@ -85,7 +126,9 @@ defmodule GptTalkerbot.GroupMessageCache do
   # Recupera do banco as mensagens persistidas antes do último restart
   defp ensure_loaded(state, chat_id) do
     case Map.fetch(state, chat_id) do
-      {:ok, messages} -> {messages, state}
+      {:ok, messages} ->
+        {messages, state}
+
       :error ->
         messages = load_recent_from_db(chat_id)
         {messages, Map.put(state, chat_id, messages)}
@@ -110,7 +153,10 @@ defmodule GptTalkerbot.GroupMessageCache do
     newest_ts = messages |> List.last() |> Map.get(:inserted_at)
 
     GroupMessage
-    |> where([m], m.chat_id == ^chat_id and m.inserted_at >= ^oldest_ts and m.inserted_at <= ^newest_ts)
+    |> where(
+      [m],
+      m.chat_id == ^chat_id and m.inserted_at >= ^oldest_ts and m.inserted_at <= ^newest_ts
+    )
     |> Repo.delete_all()
   end
 

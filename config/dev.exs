@@ -68,6 +68,11 @@ config :ex_aws,
   secret_access_key: [{:awscli, "default", 30}, :instance_role],
   region: "us-east-2"
 
+# RuntimeEnvs reads /gpt_talkerbot/prod/* when SSM is enabled. In development
+# that can make the app validate the production webhook secret while dev_up.sh
+# registered the local webhook without one.
+config :gpt_talkerbot, :ssm_enabled, false
+
 if File.exists?("config/dev.secret.exs") do
   import_config "dev.secret.exs"
 end

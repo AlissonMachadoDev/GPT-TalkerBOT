@@ -63,14 +63,72 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     end
   end
 
-  @doc "Envia uma enquete (não-anônima por padrão, para render fofoca)"
+  @doc """
+  Envia uma enquete (não-anônima por padrão, para render fofoca).
+
+  Cada opção pode ser uma string ou um mapa InputPollOption — com
+  `media: %{type: "photo", media: file_id}` a opção sai ilustrada
+  (Bot API 10.0+). Aceita também `media` (mídia da pergunta),
+  `members_only` e `allows_multiple_answers`.
+  """
   def send_poll(%{chat_id: chat_id, question: question, options: options} = params) do
-    post("/sendPoll", %{
+    body =
+      %{
+        chat_id: chat_id,
+        question: question,
+        options: Enum.map(options, &poll_option/1),
+        is_anonymous: Map.get(params, :is_anonymous, false)
+      }
+      |> maybe_put(:media, params[:media])
+      |> maybe_put(:members_only, params[:members_only])
+      |> maybe_put(:allows_multiple_answers, params[:allows_multiple_answers])
+
+    post("/sendPoll", body)
+  end
+
+  @doc false
+  def poll_option(text) when is_binary(text), do: %{text: text}
+  def poll_option(%{} = option), do: option
+
+  @doc """
+  Envia uma rich message (Bot API 10.1+). `rich_message` é um
+  InputRichMessage: `%{html: ...}`, `%{markdown: ...}` ou `%{blocks: [...]}`.
+  """
+  def send_rich_message(%{chat_id: chat_id, rich_message: rich_message} = params) do
+    body =
+      %{chat_id: chat_id, rich_message: rich_message}
+      |> maybe_put(:reply_parameters, params[:reply_parameters])
+      |> maybe_put(:disable_notification, params[:disable_notification])
+
+    post("/sendRichMessage", body)
+  end
+
+  @doc """
+  Streama um rascunho de rich message — preview efêmero de ~30s, aceito
+  apenas em chat privado. Precisa ser finalizado com sendRichMessage,
+  senão o rascunho evapora.
+  """
+  def send_rich_message_draft(%{chat_id: chat_id, draft_id: draft_id, rich_message: rich_message}) do
+    post("/sendRichMessageDraft", %{
       chat_id: chat_id,
-      question: question,
-      options: Enum.map(options, &%{text: &1}),
-      is_anonymous: Map.get(params, :is_anonymous, false)
+      draft_id: draft_id,
+      rich_message: rich_message
     })
+  end
+
+  @doc """
+  file_id da foto de perfil atual do usuário, ou :none (conta sem foto,
+  privacidade, ou erro na API — pra quem chama dá no mesmo: segue sem foto).
+  """
+  def get_user_profile_photo(user_id) when is_integer(user_id) do
+    case post("/getUserProfilePhotos", %{user_id: user_id, limit: 1}) do
+      {:ok,
+       %{status: 200, body: %{"ok" => true, "result" => %{"photos" => [[_ | _] = sizes | _]}}}} ->
+        {:ok, List.last(sizes)["file_id"]}
+
+      _ ->
+        :none
+    end
   end
 
   @doc "Envia a animação nativa de dado/dardo/caça-níquel etc."
@@ -92,21 +150,12 @@ defmodule GptTalkerbotWeb.Services.Telegram do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @doc "Registra o menu de comandos exibido no autocomplete do Telegram"
-  def set_my_commands do
-    commands = [
-      %{command: "humor", description: "Humor atual do rato"},
-      %{command: "fatos", description: "O que ele sabe sobre você"},
-      %{command: "esquece", description: "Apagar o que ele sabe sobre você"},
-      %{command: "resumo", description: "Resumo debochado do grupo"},
-      %{command: "enquete", description: "Enquete a partir da sua instrução"},
-      %{command: "enquete_random", description: "Enquete maliciosa com o pessoal do grupo"},
-      %{command: "sorte", description: "Testar a sorte do rato"},
-      %{command: "ratowarn", description: "Warn oficial — responda à mensagem culpada"},
-      %{command: "bangif", description: "Banir GIF da memória — responda ao GIF"}
-    ]
-
-    post("/setMyCommands", %{commands: commands})
+  @doc """
+  Apaga o menu de comandos registrado no Telegram. Os comandos do bot são
+  deliberadamente não-anunciados: nada de autocomplete pro grupo.
+  """
+  def delete_my_commands do
+    post("/deleteMyCommands", %{})
   end
 
   defp build_and_send(fun, route, module, params) do
@@ -121,14 +170,15 @@ defmodule GptTalkerbotWeb.Services.Telegram do
 
   def set_production_mode() do
     server = Application.get_env(:gpt_talkerbot, :server_host, "")
-    set_my_commands()
 
     case GptTalkerbot.RuntimeEnvs.get_telegram_webhook_secret() do
-      "" -> get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true")
-      secret -> get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true&secret_token=#{secret}")
+      "" ->
+        get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true")
+
+      secret ->
+        get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true&secret_token=#{secret}")
     end
   end
-
 
   def get_webhook_info() do
     get("/getWebhookInfo")

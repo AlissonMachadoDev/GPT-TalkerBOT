@@ -69,17 +69,20 @@ fi
 
 SERVER_HOST="${NGROK_URL}/webhook"
 
-# Token do bot: env TELEGRAM_API_KEY ou o valor do dev.secret.exs
+# Token e secret do webhook: env ou valores do dev.secret.exs. O secret local
+# é opcional; quando ausente, o plug de desenvolvimento também pula a validação.
 TOKEN="${TELEGRAM_API_KEY:-$(grep -oP ':telegram_api_key,\s*"\K[^"]+' config/dev.secret.exs || true)}"
 if [ -z "${TOKEN}" ]; then
   echo "ERRO: telegram_api_key não encontrado (env TELEGRAM_API_KEY ou config/dev.secret.exs)"
   exit 1
 fi
 
+WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-$(grep -oP ':telegram_webhook_secret,\s*"\K[^"]+' config/dev.secret.exs || true)}"
+
 echo "==> Registrando webhook: ${SERVER_HOST}"
 WEBHOOK_ARGS="url=${SERVER_HOST}&drop_pending_updates=true"
-if [ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]; then
-  WEBHOOK_ARGS="${WEBHOOK_ARGS}&secret_token=${TELEGRAM_WEBHOOK_SECRET}"
+if [ -n "${WEBHOOK_SECRET}" ]; then
+  WEBHOOK_ARGS="${WEBHOOK_ARGS}&secret_token=${WEBHOOK_SECRET}"
 fi
 
 RESPONSE=$(curl -s "https://api.telegram.org/bot${TOKEN}/setWebhook?${WEBHOOK_ARGS}")

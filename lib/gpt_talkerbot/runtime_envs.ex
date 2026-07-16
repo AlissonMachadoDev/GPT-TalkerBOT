@@ -21,15 +21,17 @@ defmodule GptTalkerbot.RuntimeEnvs do
     telegram_webhook_secret: "",
     using: :grok,
     spice_threshold: 0.35,
-    temperature: 1.3,
+    # Acima de ~1.0 o Grok degenera em salada de tokens em respostas longas
+    # (incidente de 16/07/2026); o SSM pode ajustar, mas o default é seguro
+    temperature: 0.9,
     user_labels: %{},
     default_prompt: "",
     owner_id: "",
     allowed_groups: [],
     allowed_users: [],
-    grok_reasoning: "none",
+    grok_reasoning: "low",
     openai_model: "gpt-5.4-mini",
-    grok_model: "grok-4.3",
+    grok_model: "grok-4.5",
     relevance_threshold: 0.4,
     always_include_last: 4,
     max_context_messages: 20,
@@ -83,11 +85,18 @@ defmodule GptTalkerbot.RuntimeEnvs do
         openai_api_key: Application.get_env(:gpt_talkerbot, :openai_api_key, ""),
         grok_api_key: Application.get_env(:gpt_talkerbot, :grok_api_key, ""),
         telegram_webhook_secret:
-          Application.get_env(:gpt_talkerbot, :telegram_webhook_secret, @defaults.telegram_webhook_secret),
-        default_prompt: Application.get_env(:gpt_talkerbot, :default_prompt, @defaults.default_prompt),
+          Application.get_env(
+            :gpt_talkerbot,
+            :telegram_webhook_secret,
+            @defaults.telegram_webhook_secret
+          ),
+        default_prompt:
+          Application.get_env(:gpt_talkerbot, :default_prompt, @defaults.default_prompt),
         owner_id: Application.get_env(:gpt_talkerbot, :owner_id, @defaults.owner_id),
-        allowed_groups: Application.get_env(:gpt_talkerbot, :allowed_groups, @defaults.allowed_groups),
-        allowed_users: Application.get_env(:gpt_talkerbot, :allowed_users, @defaults.allowed_users)
+        allowed_groups:
+          Application.get_env(:gpt_talkerbot, :allowed_groups, @defaults.allowed_groups),
+        allowed_users:
+          Application.get_env(:gpt_talkerbot, :allowed_users, @defaults.allowed_users)
       })
       |> fetch_variables()
 
@@ -127,6 +136,38 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :persistent_term.get(__MODULE__, @defaults) |> Map.get(key, Map.get(@defaults, key))
   end
 
+  # --- Inspeção ---
+
+  @secret_params [:openai_api_key, :grok_api_key, :telegram_webhook_secret]
+
+  @doc """
+  Snapshot das variáveis em vigor, com segredos mascarados e o prompt
+  resumido para tamanho — seguro para logar ou mandar no chat do owner.
+  """
+  def dump do
+    :persistent_term.get(__MODULE__, @defaults)
+    |> Map.new(fn {key, value} -> {key, printable(key, value)} end)
+  end
+
+  @doc "dump/0 formatado em texto, uma variável por linha, em ordem alfabética"
+  def format_dump do
+    dump()
+    |> Enum.sort()
+    |> Enum.map_join("\n", fn {key, value} -> "#{key}: #{value}" end)
+  end
+
+  defp printable(key, value) when key in @secret_params do
+    case value do
+      "" -> "(vazia)"
+      v -> "definida (#{String.length(v)} chars)"
+    end
+  end
+
+  defp printable(:default_prompt, ""), do: "(vazio)"
+  defp printable(:default_prompt, v), do: "(#{String.length(v)} chars)"
+  defp printable(_key, value) when is_binary(value), do: value
+  defp printable(_key, value), do: inspect(value)
+
   # --- Escrita ---
 
   def set_current_service(service) when service in [:openai, :grok] do
@@ -145,7 +186,11 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def handle_cast(:update_variables, state) do
     new_state = fetch_variables(state)
     publish(new_state)
-    Logger.info("RuntimeEnvs: variables updated (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})")
+
+    Logger.info(
+      "RuntimeEnvs: variables updated (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})"
+    )
+
     {:noreply, new_state}
   end
 
@@ -153,7 +198,11 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def handle_info(:refresh_variables, state) do
     new_state = fetch_variables(state)
     publish(new_state)
-    Logger.info("RuntimeEnvs: scheduled refresh (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})")
+
+    Logger.info(
+      "RuntimeEnvs: scheduled refresh (spice_threshold=#{new_state.spice_threshold}, temperature=#{new_state.temperature})"
+    )
+
     schedule_refresh()
     {:noreply, new_state}
   end
@@ -203,12 +252,18 @@ defmodule GptTalkerbot.RuntimeEnvs do
           {:ok, value}
 
         {:error, reason} ->
-          Logger.warning("RuntimeEnvs: failed to fetch #{param_name} from SSM: #{inspect(reason)}")
+          Logger.warning(
+            "RuntimeEnvs: failed to fetch #{param_name} from SSM: #{inspect(reason)}"
+          )
+
           :error
       end
     rescue
       e ->
-        Logger.warning("RuntimeEnvs: exception fetching #{param_name} from SSM: #{Exception.message(e)}")
+        Logger.warning(
+          "RuntimeEnvs: exception fetching #{param_name} from SSM: #{Exception.message(e)}"
+        )
+
         :error
     catch
       :exit, reason ->
@@ -219,7 +274,9 @@ defmodule GptTalkerbot.RuntimeEnvs do
 
   defp parse_float(value, fallback) do
     case Float.parse(value) do
-      {f, _} -> f
+      {f, _} ->
+        f
+
       :error ->
         Logger.warning("RuntimeEnvs: invalid float value from SSM: #{inspect(value)}")
         fallback
@@ -228,7 +285,9 @@ defmodule GptTalkerbot.RuntimeEnvs do
 
   defp parse_integer(value, fallback) do
     case Integer.parse(String.trim(value)) do
-      {i, _} -> i
+      {i, _} ->
+        i
+
       :error ->
         Logger.warning("RuntimeEnvs: invalid integer value from SSM: #{inspect(value)}")
         fallback
@@ -262,6 +321,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
       case String.split(pair, ":", parts: 2) do
         [id, label] ->
           Map.put(acc, String.trim(id), label |> String.trim() |> String.trim("\""))
+
         _ ->
           acc
       end

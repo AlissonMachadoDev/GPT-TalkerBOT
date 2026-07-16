@@ -9,6 +9,8 @@ defmodule GptTalkerbot.ChatMembers.ChatMember do
     field :first_name, :string
     field :username, :string
     field :status, :string, default: "active"
+    # Contador de mensagens, incrementado fora do changeset (Repo.update_all)
+    field :message_count, :integer, default: 0
 
     timestamps()
   end

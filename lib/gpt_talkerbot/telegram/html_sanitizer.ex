@@ -3,7 +3,9 @@ defmodule GptTalkerbot.Telegram.HtmlSanitizer do
   Truncamento seguro de respostas enviadas com parse_mode HTML.
 
   Uma tag cortada no meio ("<b" no fim) ou deixada aberta faz o Telegram
-  rejeitar a mensagem inteira com 400 — o usuário recebe silêncio.
+  rejeitar a mensagem inteira com 400 — o usuário recebe silêncio. Por isso
+  o fechamento de tags abertas roda em toda mensagem, mesmo dentro do
+  limite: o LLM às vezes abre uma tag e esquece de fechar.
   """
 
   @default_max_length 3500
@@ -14,7 +16,7 @@ defmodule GptTalkerbot.Telegram.HtmlSanitizer do
 
   def truncate(text, max_length) do
     if String.length(text) <= max_length do
-      text
+      close_open_tags(text)
     else
       text
       |> String.slice(0, max_length)

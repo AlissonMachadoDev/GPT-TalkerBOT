@@ -11,17 +11,32 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     /sorte    - animação nativa de dado/dardo/caça-níquel
     /ratowarn - warn debochado para a mensagem respondida (perdão aos 6)
     /bangif   - bane da memória o GIF respondido (controle de conteúdo)
+    /esquecemsg - apaga a mensagem respondida do contexto/histórico (só admin)
+    /faxina   - IA revisa o contexto e remove mensagens degeneradas (só admin)
+    /amnesia  - apaga todo o contexto de conversa do chat, preservando fatos/warns/GIFs (só admin)
     /ignore_messages <texto> - mensagens contendo o texto ficam fora do histórico (só admin)
   """
 
   require Logger
 
-  alias GptTalkerbot.{ChatMembers, GifMemory, GroupMessageCache, IgnoredPatterns, LLM, Memory, MoodTracker, RuntimeEnvs, Warns}
+  alias GptTalkerbot.{
+    ChatMembers,
+    GifMemory,
+    GroupMessageCache,
+    IgnoredPatterns,
+    LLM,
+    Memory,
+    MoodTracker,
+    RuntimeEnvs,
+    Warns
+  }
+
+  alias GptTalkerbot.Memory.ContextJanitor
   alias GptTalkerbot.PromptSettings.{BotDefinitions, GroupContext}
-  alias GptTalkerbot.Telegram.HtmlSanitizer
+  alias GptTalkerbot.Telegram.{HtmlSanitizer, RichMessages}
   alias GptTalkerbotWeb.Services.Telegram
 
-  @commands ~w(humor fatos esquece resumo enquete enquete_random sorte ratowarn bangif ignore_messages)
+  @commands ~w(humor fatos esquece resumo enquete enquete_random sorte ratowarn bangif esquecemsg faxina amnesia ignore_messages)
 
   @dice_emojis ["🎲", "🎯", "🏀", "⚽", "🎳", "🎰"]
 
@@ -102,15 +117,32 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
       context ->
         Telegram.send_typing(to_string(chat_id))
-        reply(message, roast_recap(context))
+        recap = roast_recap(context)
+
+        case Telegram.send_rich_message(%{
+               chat_id: chat_id,
+               rich_message: RichMessages.resumo(recap)
+             }) do
+          {:ok, %{status: 200}} ->
+            :ok
+
+          # Rich message recusada não pode calar o /resumo. O recap agora é
+          # Markdown, então o fallback vai sem parse_mode — sai com os
+          # símbolos crus, mas sai
+          _ ->
+            reply_plain(message, recap)
+        end
     end
   end
 
   def handle("enquete_random", %{"chat" => %{"id" => chat_id}} = message) do
-    names = ChatMembers.list_names(chat_id, 10) |> Enum.shuffle() |> Enum.take(8)
+    members = poll_members(chat_id) |> Enum.shuffle() |> Enum.take(8)
 
-    if length(names) < 2 do
-      reply(message, "Enquete com esse deserto? Preciso conhecer pelo menos 2 pessoas daqui. Falem mais. 🐀")
+    if length(members) < 2 do
+      reply(
+        message,
+        "Enquete com esse deserto? Preciso conhecer pelo menos 2 pessoas daqui. Falem mais. 🐀"
+      )
     else
       Telegram.send_typing(to_string(chat_id))
 
@@ -120,11 +152,14 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
                prompt: RuntimeEnvs.get_default_prompt() <> @enquete_instruction,
                max_tokens: 150
              ) do
-          {:ok, q} -> q |> String.trim() |> String.trim("\"") |> String.slice(0, 250)
-          {:error, _} -> "Quem do grupo é mais provável de ser substituído por um rato robótico sem ninguém notar?"
+          {:ok, q} ->
+            q |> String.trim() |> String.trim("\"") |> String.slice(0, 250)
+
+          {:error, _} ->
+            "Quem do grupo é mais provável de ser substituído por um rato robótico sem ninguém notar?"
         end
 
-      send_and_remember_poll(chat_id, question, names)
+      send_and_remember_poll(chat_id, question, Enum.map(members, &poll_option_with_photo/1))
     end
   end
 
@@ -141,10 +176,13 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
         case generate_custom_poll(chat_id, instruction) do
           {:ok, question, options} ->
-            send_and_remember_poll(chat_id, question, options)
+            send_and_remember_poll(chat_id, question, illustrate_member_options(options, chat_id))
 
           :error ->
-            reply(message, "Minha máquina de enquetes engasgou com essa instrução. Reformula aí. 🐀")
+            reply(
+              message,
+              "Minha máquina de enquetes engasgou com essa instrução. Reformula aí. 🐀"
+            )
         end
     end
   end
@@ -255,10 +293,107 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     end
   end
 
-  def handle("bangif", %{"chat" => %{"id" => chat_id}, "reply_to_message" => %{"animation" => anim}} = message) do
+  def handle(
+        "esquecemsg",
+        %{
+          "chat" => %{"id" => chat_id},
+          "from" => %{"id" => issuer_id},
+          "reply_to_message" => replied
+        } = message
+      ) do
+    text = replied["text"] || replied["caption"] || ""
+
+    cond do
+      not is_admin?(issuer_id) ->
+        reply(message, "Só o admin edita minha memória na marra. 🐀")
+
+      text == "" ->
+        reply(message, "Essa mensagem não tem texto — não tem o que esquecer.")
+
+      true ->
+        removed = Memory.forget_by_content(to_string(chat_id), text)
+        GroupMessageCache.forget(chat_id, text)
+
+        if removed > 0 do
+          reply(
+            message,
+            "Feito. #{removed} registro(s) incinerados do histórico. Isso nunca aconteceu, e quem imprimiu não fui eu. 🐀🔥"
+          )
+        else
+          reply(message, "Não achei isso no meu histórico — ou já tinha esquecido sozinho.")
+        end
+    end
+  end
+
+  def handle("esquecemsg", %{"from" => %{"id" => issuer_id}} = message) do
+    if is_admin?(issuer_id) do
+      reply(message, "Esquecer o quê? Responda à mensagem podre que eu queimo o registro.")
+    else
+      reply(message, "Só o admin edita minha memória na marra. 🐀")
+    end
+  end
+
+  # Último recurso proporcional: só a memória de conversa do chat evapora.
+  # Fatos, warns, GIFs e o resumo extraído ficam — pra isso existe o
+  # /cleardatabase, que é a bomba atômica.
+  def handle("amnesia", %{"chat" => %{"id" => chat_id}, "from" => %{"id" => issuer_id}} = message) do
+    if is_admin?(issuer_id) do
+      {removed, _} = Memory.clear_context(to_string(chat_id))
+      GroupMessageCache.clear(chat_id)
+
+      reply(
+        message,
+        "🧠💨 Amnésia seletiva aplicada: #{removed} mensagens de conversa esquecidas. " <>
+          "Fatos, warns e GIFs continuam no arquivo — só a fofoca recente evaporou. Quem sou eu mesmo?"
+      )
+    else
+      reply(message, "Amnésia só quando o admin manda. Minha memória não é playground. 🐀")
+    end
+  end
+
+  def handle("faxina", %{"chat" => %{"id" => chat_id}, "from" => %{"id" => issuer_id}} = message) do
+    if is_admin?(issuer_id) do
+      Telegram.send_typing(to_string(chat_id))
+
+      case ContextJanitor.sweep(to_string(chat_id)) do
+        {:ok, 0, _removed} ->
+          reply(message, "Histórico vazio, nada pra revisar. Poeira zero no porão. 🐀")
+
+        {:ok, reviewed, 0} ->
+          reply(
+            message,
+            "Inspeção completa: #{reviewed} mensagens revisadas, nenhuma podre. Meu histórico tá mais limpo que a sua ficha. 🐀"
+          )
+
+        {:ok, reviewed, removed} ->
+          reply(
+            message,
+            "🧹 Faxina feita: #{reviewed} mensagens revisadas, <b>#{removed} incineradas</b> por degeneração. O porão agradece."
+          )
+
+        {:error, reason} ->
+          Logger.warning("RatoCommands: faxina failed: #{inspect(reason)}")
+
+          reply(
+            message,
+            "Meu inspetor de qualidade travou no meio da vistoria. Tenta de novo daqui a pouco."
+          )
+      end
+    else
+      reply(message, "Faxina na minha memória só quem paga meu queijo: o admin. 🐀")
+    end
+  end
+
+  def handle(
+        "bangif",
+        %{"chat" => %{"id" => chat_id}, "reply_to_message" => %{"animation" => anim}} = message
+      ) do
     case GifMemory.ban(chat_id, anim["file_unique_id"]) do
-      :ok -> reply(message, "GIF banido da minha memória. Nunca vi, não conheço, não mando mais. 🐀")
-      :not_found -> reply(message, "Esse GIF nem estava na minha coleção, mas tá anotado o recado.")
+      :ok ->
+        reply(message, "GIF banido da minha memória. Nunca vi, não conheço, não mando mais. 🐀")
+
+      :not_found ->
+        reply(message, "Esse GIF nem estava na minha coleção, mas tá anotado o recado.")
     end
   end
 
@@ -273,11 +408,72 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   defp send_and_remember_poll(chat_id, question, options) do
     Telegram.send_poll(%{chat_id: to_string(chat_id), question: question, options: options})
 
+    texts =
+      Enum.map(options, fn
+        %{text: text} -> text
+        text -> text
+      end)
+
     GroupMessageCache.add_bot_message(
       chat_id,
-      ~s([enquete: "#{question}" — opções: #{Enum.join(options, ", ")}])
+      ~s([enquete: "#{question}" — opções: #{Enum.join(texts, ", ")}])
     )
   end
+
+  # Foto de perfil na opção deixa a enquete com cara de line-up de suspeitos
+  # (Bot API 10.0). Sem foto — privacidade, conta sem foto — sai só o nome.
+  defp poll_option_with_photo(%{user_id: user_id, first_name: name}) do
+    with {id, ""} <- Integer.parse(user_id),
+         {:ok, file_id} <- Telegram.get_user_profile_photo(id) do
+      %{text: name, media: %{type: "photo", media: file_id}}
+    else
+      _ -> %{text: name}
+    end
+  end
+
+  # Enquete só com quem participa de verdade — todos com o mesmo peso no
+  # sorteio. Enquanto o contador não conhece gente o suficiente (grupo
+  # recém-migrado), vale a lista completa, como antes.
+  defp poll_members(chat_id) do
+    members =
+      case ChatMembers.list_frequent_members(chat_id) do
+        frequent when length(frequent) >= 2 -> frequent
+        _ -> ChatMembers.list_members(chat_id)
+      end
+
+    Enum.reject(members, &is_nil(&1.first_name))
+  end
+
+  # Na /enquete custom o LLM devolve opções em texto; quando uma opção é o
+  # nome de alguém da listagem de membros, a foto entra junto
+  defp illustrate_member_options(options, chat_id) do
+    options
+    |> match_member_options(ChatMembers.list_members(chat_id))
+    |> Enum.map(fn
+      {text, nil} -> text
+      {text, member} -> poll_option_with_photo(%{user_id: member.user_id, first_name: text})
+    end)
+  end
+
+  @doc false
+  # Pareia cada opção com um membro pelo nome (sem case/espaços). Nome
+  # repetido no grupo não pareia ninguém — melhor sem foto do que com a
+  # foto do xará errado.
+  def match_member_options(options, members) do
+    by_name =
+      members
+      |> Enum.reject(&is_nil(&1.first_name))
+      |> Enum.group_by(&normalize_name(&1.first_name))
+
+    Enum.map(options, fn text ->
+      case by_name[normalize_name(text)] do
+        [member] -> {text, member}
+        _ -> {text, nil}
+      end
+    end)
+  end
+
+  defp normalize_name(name), do: name |> String.trim() |> String.downcase()
 
   # Texto após o comando: "/enquete melhor pizza" -> "melhor pizza"
   defp command_args(text) do
@@ -289,9 +485,9 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
   defp generate_custom_poll(chat_id, instruction) do
     members =
-      case ChatMembers.list_names(chat_id, 10) do
+      case poll_members(chat_id) do
         [] -> "(nenhuma pessoa conhecida ainda)"
-        names -> Enum.join(names, ", ")
+        active -> Enum.map_join(active, ", ", & &1.first_name)
       end
 
     user_content = "Pessoas do grupo: #{members}\n\nInstrução da enquete: #{instruction}"
@@ -328,8 +524,11 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
            prompt: RuntimeEnvs.get_default_prompt() <> @warn_instruction,
            max_tokens: 200
          ) do
-      {:ok, text} -> text |> String.trim() |> HtmlSanitizer.truncate()
-      {:error, _} -> "Violação do artigo 7, parágrafo queijo, do Regulamento do Esgoto. Sem recurso."
+      {:ok, text} ->
+        text |> String.trim() |> HtmlSanitizer.truncate()
+
+      {:error, _} ->
+        "Violação do artigo 7, parágrafo queijo, do Regulamento do Esgoto. Sem recurso."
     end
   end
 
@@ -345,16 +544,19 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     |> String.replace(">", "&gt;")
   end
 
+  # O recap sai em Markdown porque vira rich message — tabelas, listas e
+  # spoilers entram no repertório do deboche. O HtmlSanitizer não se aplica:
+  # ele conserta tags HTML, e aqui não pode haver nenhuma.
   defp roast_recap(context) do
     system_prompt =
       RuntimeEnvs.get_default_prompt() <>
-        @resumo_instruction <> BotDefinitions.format_instruction()
+        @resumo_instruction <> BotDefinitions.rich_format_instruction()
 
     messages = [%{role: "user", content: "Resumo neutro:\n" <> context}]
 
     case LLM.complete_text(messages, prompt: system_prompt, max_tokens: 500) do
       {:ok, recap} ->
-        HtmlSanitizer.truncate(recap)
+        String.trim(recap)
 
       {:error, reason} ->
         Logger.warning("RatoCommands: recap AI call failed: #{inspect(reason)}")
@@ -377,6 +579,15 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
       text: text,
       reply_to_message_id: to_string(message_id),
       parse_mode: "HTML"
+    })
+  end
+
+  # Sem parse_mode: para texto Markdown, que o parse_mode HTML corromperia
+  defp reply_plain(%{"chat" => %{"id" => chat_id}, "message_id" => message_id}, text) do
+    Telegram.send_message(%{
+      chat_id: to_string(chat_id),
+      text: text,
+      reply_to_message_id: to_string(message_id)
     })
   end
 end
