@@ -170,14 +170,51 @@ defmodule GptTalkerbotWeb.Services.Telegram do
 
   def set_production_mode() do
     server = Application.get_env(:gpt_talkerbot, :server_host, "")
+    secret = GptTalkerbot.RuntimeEnvs.get_telegram_webhook_secret()
 
-    case GptTalkerbot.RuntimeEnvs.get_telegram_webhook_secret() do
-      "" ->
-        get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true")
-
-      secret ->
-        get("/setWebhook?url=#{server}/webhook&drop_pending_updates=true&secret_token=#{secret}")
+    with {:ok, path} <- production_webhook_path(server, secret) do
+      get(path)
     end
+  end
+
+  @doc false
+  def production_webhook_path(server, secret)
+
+  def production_webhook_path(server, _secret) when server in [nil, ""] do
+    {:error, :server_host_not_configured}
+  end
+
+  def production_webhook_path(server, secret) when is_binary(server) do
+    webhook_url = normalize_webhook_url(server)
+
+    if webhook_url == "" do
+      {:error, :server_host_not_configured}
+    else
+      params =
+        %{url: webhook_url, drop_pending_updates: true}
+        |> maybe_put_webhook_secret(secret)
+
+      {:ok, "/setWebhook?" <> URI.encode_query(params)}
+    end
+  end
+
+  defp maybe_put_webhook_secret(params, secret) when is_binary(secret) do
+    case String.trim(secret) do
+      "" -> params
+      secret -> Map.put(params, :secret_token, secret)
+    end
+  end
+
+  defp maybe_put_webhook_secret(params, _secret), do: params
+
+  defp normalize_webhook_url(server) do
+    server
+    |> String.trim()
+    |> String.trim_trailing("/")
+    |> then(fn
+      "" -> ""
+      url -> if String.ends_with?(url, "/webhook"), do: url, else: url <> "/webhook"
+    end)
   end
 
   def get_webhook_info() do
