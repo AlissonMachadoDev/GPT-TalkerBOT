@@ -22,8 +22,10 @@ defmodule GptTalkerbot.Application do
         [
           GptTalkerbot.RuntimeEnvs,
           GptTalkerbot.MoodTracker,
-          GptTalkerbot.Interjector,
-          GptTalkerbot.DailySummary,
+          GptTalkerbot.Interjector
+        ] ++
+        daily_summary_children() ++
+        [
           GptTalkerbot.GroupMessageCache,
           GptTalkerbot.ChatMembers.Cache,
           GptTalkerbot.IgnoredPatterns,
@@ -41,6 +43,14 @@ defmodule GptTalkerbot.Application do
   defp broker_children do
     if Application.get_env(:gpt_talkerbot, :start_broker, true) do
       [GptTalkerbot.RMQPublisher, GptTalkerbot.BotProcessor]
+    else
+      []
+    end
+  end
+
+  defp daily_summary_children do
+    if Application.get_env(:gpt_talkerbot, :daily_summary_enabled, true) do
+      [GptTalkerbot.DailySummary]
     else
       []
     end

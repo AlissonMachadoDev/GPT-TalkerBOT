@@ -72,6 +72,7 @@ config :ex_aws,
 # that can make the app validate the production webhook secret while dev_up.sh
 # registered the local webhook without one.
 config :gpt_talkerbot, :ssm_enabled, false
+config :gpt_talkerbot, :daily_summary_enabled, false
 
 if File.exists?("config/dev.secret.exs") do
   import_config "dev.secret.exs"

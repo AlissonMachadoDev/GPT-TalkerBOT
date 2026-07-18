@@ -84,32 +84,23 @@ defmodule GptTalkerbot.ChatMembers do
     |> Enum.reject(&is_nil/1)
   end
 
-  # Frequente = falou pelo menos @min_messages vezes E pelo menos
-  # @frequent_share do volume do membro mais falante do chat
+  # Frequente = está entre os @top_talkers mais falantes do chat, tendo
+  # falado pelo menos @min_messages vezes — quem não interage não entra
   @min_messages 5
-  @frequent_share 0.25
+  @top_talkers 8
 
   @doc """
-  Membros ativos que participam de verdade da conversa. Todos entram com
-  peso igual — quem chama sorteia uniformemente; a frequência só decide
-  quem está no páreo, não quantas vezes aparece.
+  Os membros ativos mais falantes do chat. Todos entram com peso igual —
+  quem chama sorteia uniformemente; a frequência só decide quem está no
+  páreo, não quantas vezes aparece.
   """
-  def list_frequent_members(chat_id, limit \\ @max_listed) do
-    chat_id
-    |> list_members(limit)
-    |> filter_frequent()
-  end
-
-  @doc false
-  def filter_frequent(members) do
-    top =
-      members
-      |> Enum.map(&(&1.message_count || 0))
-      |> Enum.max(fn -> 0 end)
-
-    cutoff = max(@min_messages, ceil(top * @frequent_share))
-
-    Enum.filter(members, &((&1.message_count || 0) >= cutoff))
+  def list_frequent_members(chat_id, limit \\ @top_talkers) do
+    ChatMember
+    |> where([m], m.chat_id == ^to_string(chat_id) and m.status == "active")
+    |> where([m], m.message_count >= @min_messages)
+    |> order_by([m], desc: m.message_count, asc: m.first_name)
+    |> limit(^limit)
+    |> Repo.all()
   end
 
   @doc """

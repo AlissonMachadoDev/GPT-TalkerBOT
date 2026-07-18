@@ -86,27 +86,45 @@ defmodule GptTalkerbot.ChatMembersTest do
 
       assert Enum.sort(names) == ["Mediana", "Tagarela"]
     end
-  end
 
-  describe "filter_frequent/1 (corte puro)" do
-    defp member(count), do: %{message_count: count}
+    test "tagarela dominante não expulsa o resto do páreo" do
+      ChatMembers.track(@chat_id, user(1, "Tagarela"))
+      ChatMembers.track(@chat_id, user(2, "Quieta"))
+      set_count("1", 2000)
+      set_count("2", 6)
 
-    test "corte relativo: pelo menos 25% do mais falante" do
-      assert ChatMembers.filter_frequent([member(100), member(25), member(24)]) ==
-               [member(100), member(25)]
+      names = ChatMembers.list_frequent_members(@chat_id) |> Enum.map(& &1.first_name)
+
+      assert Enum.sort(names) == ["Quieta", "Tagarela"]
     end
 
-    test "grupo morno: vale o mínimo absoluto de 5 mensagens" do
-      assert ChatMembers.filter_frequent([member(8), member(5), member(4)]) ==
-               [member(8), member(5)]
+    test "list_frequent_members fica só com os 8 mais falantes" do
+      for i <- 1..10 do
+        ChatMembers.track(@chat_id, user(i, "Membro#{i}"))
+        set_count(to_string(i), i * 10)
+      end
+
+      names = ChatMembers.list_frequent_members(@chat_id) |> Enum.map(& &1.first_name)
+
+      assert names == Enum.map(10..3//-1, &"Membro#{&1}")
     end
 
-    test "sem contadores ainda, ninguém é frequente" do
-      assert ChatMembers.filter_frequent([member(0), member(nil)]) == []
+    test "membro que saiu do grupo não entra no páreo" do
+      ChatMembers.track(@chat_id, user(1, "Presente"))
+      ChatMembers.track(@chat_id, user(2, "Exilada"))
+      set_count("1", 10)
+      set_count("2", 500)
+      ChatMembers.mark_left(@chat_id, user(2, "Exilada"))
+
+      names = ChatMembers.list_frequent_members(@chat_id) |> Enum.map(& &1.first_name)
+
+      assert names == ["Presente"]
     end
 
-    test "lista vazia não quebra" do
-      assert ChatMembers.filter_frequent([]) == []
+    test "chat sem contadores não tem frequentes" do
+      ChatMembers.track(@chat_id, user(1, "Nova"))
+
+      assert ChatMembers.list_frequent_members(@chat_id) == []
     end
   end
 
