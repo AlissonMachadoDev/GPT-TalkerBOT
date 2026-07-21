@@ -42,6 +42,7 @@ Módulos principais:
 ## Comandos
 
 Público (chats permitidos): `/humor`, `/fatos`, `/esquece`, `/resumo`,
+`/voz <pedido>` (responde em nota de voz — ver [Áudio (TTS)](#áudio-tts)),
 `/enquete <instrução>` (enquete gerada a partir da instrução),
 `/enquete_random` (enquete maliciosa com membros do grupo como opções), `/sorte`
 (dado/caça-níquel nativo), `/ratowarn` (warn debochado na mensagem respondida;
@@ -61,8 +62,9 @@ Legado: `/register`, `/register_group`.
 ## Configuração
 
 Env vars (prod): `DATABASE_URL`, `SECRET_KEY_BASE`, `OPENAI_API_KEY`,
-`GROK_API_KEY`, `TELEGRAM_API_KEY`, `SERVER_HOST`, `TELEGRAM_WEBHOOK_SECRET`,
-`RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, credenciais AWS.
+`GROK_API_KEY`, `ELEVENLABS_API_KEY`, `TELEGRAM_API_KEY`, `SERVER_HOST`,
+`TELEGRAM_WEBHOOK_SECRET`, `RABBITMQ_HOST`, `RABBITMQ_USERNAME`,
+`RABBITMQ_PASSWORD`, credenciais AWS.
 
 Parâmetros no SSM (path `/gpt_talkerbot/prod/`), atualizáveis sem deploy via
 `/updatevariables`: `default_prompt`, `owner_id`, `allowed_users`,
@@ -71,13 +73,39 @@ Parâmetros no SSM (path `/gpt_talkerbot/prod/`), atualizáveis sem deploy via
 `always_include_last`, `max_context_messages`, `session_gap_minutes`,
 `mood_duration`, `interject_probability`, `interject_cooldown_minutes`,
 `reaction_probability`, `gif_probability`, `daily_summary_hour` (fora de 0–23
-desativa), `utc_offset`.
+desativa), `utc_offset`, `tts_provider`, `elevenlabs_voices`,
+`elevenlabs_model` (ver [Áudio (TTS)](#áudio-tts)).
 
 Acesso é *fail closed*: com `allowed_users` e `allowed_groups` vazios o bot
 não responde a ninguém.
 
 `TELEGRAM_WEBHOOK_SECRET` é registrado no Telegram pelo `/setproduction` e
 validado em cada update; sem ele configurado a validação é pulada (dev).
+
+## Áudio (TTS)
+
+O bot responde em nota de voz de dois jeitos: pelo comando `/voz <pedido>` (o
+texto é gerado por IA in-character e então sintetizado) ou quando o modelo
+termina uma resposta com o marcador `[[ratobo:audio]]` (acionado por pedidos
+naturais de áudio no chat). A síntese fica em `Services.TTS`.
+
+**Provider** — `tts_provider` no SSM: `openai` (padrão) ou `elevenlabs`. Sem
+`ELEVENLABS_API_KEY` ou sem a voz `default` configurada, o TTS cai pro OpenAI
+automaticamente.
+
+**Adicionar uma voz (ElevenLabs)** — as vozes ficam no parâmetro SSM
+`elevenlabs_voices`, no formato `nome:voice_id;nome:voice_id` (mesmo formato do
+`user_labels`). O `voice_id` vem do painel da ElevenLabs (Voices). A voz `default`
+é obrigatória; as demais são para uso por contexto no futuro:
+
+```
+default:21m00Tcm4TlvDq8ikWAM;male_1:pNInz6obpgDQGcFmaJgB;narrador:...
+```
+
+Hoje **só a `default` é usada** — toda nota de voz sai com ela. A seleção de voz
+por contexto/diálogo ainda não é dirigida pelo prompt; existe apenas o gancho de
+código `RuntimeEnvs.get_elevenlabs_voice("nome")`, a ser ligado quando os
+diálogos multi-voz forem implementados.
 
 ## Desenvolvimento
 

@@ -32,6 +32,14 @@ defmodule GptTalkerbot.RuntimeEnvs do
     grok_reasoning: "low",
     openai_model: "gpt-5.4-mini",
     grok_model: "grok-4.5",
+    # TTS: provider selecionável (openai | elevenlabs). ElevenLabs exige
+    # api_key + ao menos a voz "default"; sem eles o TTS cai pro OpenAI.
+    tts_provider: "openai",
+    elevenlabs_api_key: "",
+    # Mapa nome->voice_id (formato "default:<id>;male_1:<id>"), pra escolher a
+    # voz por contexto. Por ora só a "default" é usada.
+    elevenlabs_voices: %{},
+    elevenlabs_model: "eleven_multilingual_v2",
     relevance_threshold: 0.4,
     always_include_last: 4,
     max_context_messages: 20,
@@ -69,7 +77,9 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :grok_reasoning,
     :openai_model,
     :grok_model,
-    :telegram_webhook_secret
+    :telegram_webhook_secret,
+    :tts_provider,
+    :elevenlabs_model
   ]
   @integer_list_params [:allowed_groups, :allowed_users]
 
@@ -84,6 +94,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
       |> Map.merge(%{
         openai_api_key: Application.get_env(:gpt_talkerbot, :openai_api_key, ""),
         grok_api_key: Application.get_env(:gpt_talkerbot, :grok_api_key, ""),
+        elevenlabs_api_key: Application.get_env(:gpt_talkerbot, :elevenlabs_api_key, ""),
         telegram_webhook_secret:
           Application.get_env(
             :gpt_talkerbot,
@@ -96,7 +107,15 @@ defmodule GptTalkerbot.RuntimeEnvs do
         allowed_groups:
           Application.get_env(:gpt_talkerbot, :allowed_groups, @defaults.allowed_groups),
         allowed_users:
-          Application.get_env(:gpt_talkerbot, :allowed_users, @defaults.allowed_users)
+          Application.get_env(:gpt_talkerbot, :allowed_users, @defaults.allowed_users),
+        # tts_provider e elevenlabs_voices normalmente vêm do SSM; em dev (SSM
+        # off) esse override permite configurá-los pelo dev.secret.exs
+        tts_provider:
+          Application.get_env(:gpt_talkerbot, :tts_provider, @defaults.tts_provider),
+        elevenlabs_voices:
+          normalize_voices(
+            Application.get_env(:gpt_talkerbot, :elevenlabs_voices, @defaults.elevenlabs_voices)
+          )
       })
       |> fetch_variables()
 
@@ -121,6 +140,30 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_grok_reasoning, do: get(:grok_reasoning)
   def get_openai_model, do: get(:openai_model)
   def get_grok_model, do: get(:grok_model)
+  def get_tts_provider, do: normalize_tts_provider(get(:tts_provider))
+  def get_elevenlabs_api_key, do: get(:elevenlabs_api_key)
+  def get_elevenlabs_model, do: get(:elevenlabs_model)
+  def get_elevenlabs_voices, do: get(:elevenlabs_voices)
+
+  @doc """
+  Voice_id da ElevenLabs para o contexto `name` (default "default"). Cai na voz
+  "default" se o nome não existir, ou "" se nem a default estiver configurada.
+  """
+  def get_elevenlabs_voice(name \\ "default"), do: resolve_voice(get_elevenlabs_voices(), name)
+
+  @doc false
+  def resolve_voice(voices, name) do
+    Map.get(voices, name) || Map.get(voices, "default") || ""
+  end
+
+  @doc false
+  def normalize_tts_provider(value) do
+    case value do
+      :elevenlabs -> :elevenlabs
+      "elevenlabs" -> :elevenlabs
+      _ -> :openai
+    end
+  end
   def get_relevance_threshold, do: get(:relevance_threshold)
   def get_always_include_last, do: get(:always_include_last)
   def get_max_context_messages, do: get(:max_context_messages)
@@ -138,7 +181,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
 
   # --- Inspeção ---
 
-  @secret_params [:openai_api_key, :grok_api_key, :telegram_webhook_secret]
+  @secret_params [:openai_api_key, :grok_api_key, :elevenlabs_api_key, :telegram_webhook_secret]
 
   @doc """
   Snapshot das variáveis em vigor, com segredos mascarados e o prompt
@@ -223,6 +266,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
       |> fetch_typed(@string_params, fn value, _fallback -> value end)
       |> fetch_typed(@integer_list_params, &parse_integer_list/2)
       |> Map.put(:user_labels, fetch_user_labels(state.user_labels))
+      |> Map.put(:elevenlabs_voices, fetch_elevenlabs_voices(state.elevenlabs_voices))
     else
       state
     end
@@ -312,6 +356,22 @@ defmodule GptTalkerbot.RuntimeEnvs do
       :error -> fallback
     end
   end
+
+  # Mesmo formato do user_labels ("nome:valor;nome:valor"), mapeando nome de
+  # contexto -> voice_id da ElevenLabs
+  defp fetch_elevenlabs_voices(fallback) do
+    case fetch_raw_param(@ssm_prefix <> "elevenlabs_voices") do
+      {:ok, value} -> parse_user_labels(value)
+      :error -> fallback
+    end
+  end
+
+  # Aceita o mapa direto ou a mesma string do SSM ("default:id;male_1:id"),
+  # para o override de dev poder usar qualquer um dos dois
+  @doc false
+  def normalize_voices(value) when is_map(value), do: value
+  def normalize_voices(value) when is_binary(value), do: parse_user_labels(value)
+  def normalize_voices(_), do: %{}
 
   @doc false
   def parse_user_labels(value) do

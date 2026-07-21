@@ -6,6 +6,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     /fatos    - lista o que o bot sabe sobre o usuário
     /esquece  - apaga os fatos guardados sobre o usuário
     /resumo   - recap debochado das últimas 12h do grupo
+    /voz <pedido> - o bot responde ao pedido em nota de voz (texto gerado por IA + TTS)
     /enquete_random - enquete maliciosa com os membros do grupo como opções
     /enquete <instrução> - enquete gerada a partir da instrução dada
     /sorte    - animação nativa de dado/dardo/caça-níquel
@@ -34,9 +35,9 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   alias GptTalkerbot.Memory.ContextJanitor
   alias GptTalkerbot.PromptSettings.BotDefinitions
   alias GptTalkerbot.Telegram.{HtmlSanitizer, RichMessages}
-  alias GptTalkerbotWeb.Services.Telegram
+  alias GptTalkerbotWeb.Services.{Telegram, TTS}
 
-  @commands ~w(humor fatos esquece resumo enquete enquete_random sorte ratowarn bangif esquecemsg faxina amnesia ignore_messages)
+  @commands ~w(humor fatos esquece resumo voz enquete enquete_random sorte ratowarn bangif esquecemsg faxina amnesia ignore_messages)
 
   @dice_emojis ["🎲", "🎯", "🏀", "⚽", "🎳", "🎰"]
 
@@ -54,6 +55,14 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   Responda APENAS com JSON no formato: {"question": "...", "options": ["...", "..."]}
   question: máximo 250 caracteres. options: de 2 a 8 itens, máximo 90 caracteres \
   cada, texto puro sem HTML. Não inclua nada além do JSON.
+  """
+
+  @voz_instruction """
+
+  O usuário vai te dar um tema ou pedido. Responda no seu tom debochado como se \
+  estivesse FALANDO em voz alta. Texto puro para um sintetizador de voz ler: sem \
+  emojis, sem asteriscos, sem markdown, sem HTML, sem links. Frases curtas e \
+  naturais, no máximo 3 frases.
   """
 
   @warn_instruction """
@@ -138,6 +147,21 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
             reply_plain(message, recap)
         end
     end
+  end
+
+  def handle("voz", %{"chat" => %{"id" => chat_id}, "text" => text} = message) do
+    case command_args(text) do
+      "" ->
+        reply(message, "Falar o quê? Manda /voz <o que você quer ouvir>. 🐀")
+
+      pedido ->
+        Telegram.send_typing(to_string(chat_id))
+        speak(message, chat_id, pedido)
+    end
+  end
+
+  def handle("voz", message) do
+    reply(message, "Falar o quê? Manda /voz <o que você quer ouvir>. 🐀")
   end
 
   def handle("enquete_random", %{"chat" => %{"id" => chat_id}} = message) do
@@ -569,6 +593,48 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
         "Meu redator interno travou, vai o rascunho cru mesmo:\n\n" <> transcript
     end
   end
+
+  # O pedido do usuário vira uma fala in-character (IA) e depois áudio (TTS).
+  # Falhas em qualquer etapa caem no mesmo aviso — o usuário não fica no vácuo.
+  defp speak(message, chat_id, pedido) do
+    with {:ok, fala} <- voz_script(pedido),
+         {:ok, audio} <- TTS.synthesize(fala) do
+      send_voice_reply(message, chat_id, audio, fala)
+    else
+      _ -> reply(message, "Minha laringe de lata engasgou. Tenta de novo. 🐀")
+    end
+  end
+
+  defp voz_script(pedido) do
+    system_prompt = RuntimeEnvs.get_default_prompt() <> @voz_instruction
+
+    case LLM.complete_text([%{role: "user", content: pedido}],
+           prompt: system_prompt,
+           max_tokens: 300
+         ) do
+      {:ok, texto} ->
+        case texto |> strip_to_plain() |> String.trim() do
+          "" -> {:error, :empty_script}
+          fala -> {:ok, fala}
+        end
+
+      {:error, reason} ->
+        Logger.warning("RatoCommands: voz script AI call failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp send_voice_reply(%{"message_id" => message_id}, chat_id, audio, fala) do
+    Telegram.send_voice(%{
+      chat_id: to_string(chat_id),
+      voice: audio,
+      caption: String.slice(fala, 0, 1024),
+      reply_to_message_id: to_string(message_id)
+    })
+  end
+
+  # Rede de segurança caso o modelo escape do "texto puro" e devolva tags
+  defp strip_to_plain(text), do: String.replace(text, ~r/<[^>]+>/, "")
 
   defp ratowarn_admin_only_message,
     do: "Somente o admin pode aplicar /ratowarn. Segura o martelo aí. 🐀"

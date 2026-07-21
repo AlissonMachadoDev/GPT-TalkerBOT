@@ -25,6 +25,20 @@ defmodule GptTalkerbot.PostActionsTest do
     test "content nil vira texto vazio sem ação" do
       assert PostActions.extract(nil) == {"", []}
     end
+
+    test "diretiva de áudio é extraída e removida do texto" do
+      assert PostActions.extract("feliz natal seus gostosos\n[[ratobo:audio]]") ==
+               {"feliz natal seus gostosos", [:audio]}
+    end
+
+    test "variações de caixa e espaços do áudio são aceitas" do
+      assert {_, [:audio]} = PostActions.extract("fala aí\n[[ Ratobo: AUDIO ]]")
+    end
+
+    test "gif e áudio juntos viram as duas ações" do
+      assert {"toma", actions} = PostActions.extract("toma\n[[ratobo:gif]]\n[[ratobo:audio]]")
+      assert Enum.sort(actions) == [:audio, :gif]
+    end
   end
 
   describe "strip/1" do

@@ -76,6 +76,7 @@ if config_env() == :prod do
 
   config :gpt_talkerbot, :openai_api_key, System.get_env("OPENAI_API_KEY", "")
   config :gpt_talkerbot, :grok_api_key, System.get_env("GROK_API_KEY", "")
+  config :gpt_talkerbot, :elevenlabs_api_key, System.get_env("ELEVENLABS_API_KEY", "")
   config :gpt_talkerbot, :telegram_api_key, System.get_env("TELEGRAM_API_KEY", "")
   config :gpt_talkerbot, :server_host, System.get_env("SERVER_HOST", "")
   config :gpt_talkerbot, :telegram_webhook_secret, System.get_env("TELEGRAM_WEBHOOK_SECRET", "")

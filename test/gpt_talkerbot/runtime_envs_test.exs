@@ -28,11 +28,57 @@ defmodule GptTalkerbot.RuntimeEnvsTest do
     end
   end
 
+  describe "normalize_tts_provider/1" do
+    test "reconhece elevenlabs como string e como átomo" do
+      assert RuntimeEnvs.normalize_tts_provider("elevenlabs") == :elevenlabs
+      assert RuntimeEnvs.normalize_tts_provider(:elevenlabs) == :elevenlabs
+    end
+
+    test "openai é o padrão para valor conhecido, desconhecido ou vazio" do
+      assert RuntimeEnvs.normalize_tts_provider("openai") == :openai
+      assert RuntimeEnvs.normalize_tts_provider(:openai) == :openai
+      assert RuntimeEnvs.normalize_tts_provider("qualquer") == :openai
+      assert RuntimeEnvs.normalize_tts_provider("") == :openai
+    end
+  end
+
+  describe "normalize_voices/1" do
+    test "faz parse da string do SSM no formato nome:voice_id" do
+      assert RuntimeEnvs.normalize_voices("default:vDEF;male_1:vM1") == %{
+               "default" => "vDEF",
+               "male_1" => "vM1"
+             }
+    end
+
+    test "mapa passa direto e valor inesperado vira mapa vazio" do
+      assert RuntimeEnvs.normalize_voices(%{"default" => "v"}) == %{"default" => "v"}
+      assert RuntimeEnvs.normalize_voices("") == %{}
+      assert RuntimeEnvs.normalize_voices(nil) == %{}
+    end
+  end
+
+  describe "resolve_voice/2" do
+    @voices %{"default" => "vDEF", "male_1" => "vM1"}
+
+    test "acha a voz pelo nome do contexto" do
+      assert RuntimeEnvs.resolve_voice(@voices, "male_1") == "vM1"
+    end
+
+    test "cai na default quando o nome não existe" do
+      assert RuntimeEnvs.resolve_voice(@voices, "narrador") == "vDEF"
+    end
+
+    test "sem default e sem match retorna vazio" do
+      assert RuntimeEnvs.resolve_voice(%{"male_1" => "vM1"}, "narrador") == ""
+      assert RuntimeEnvs.resolve_voice(%{}, "default") == ""
+    end
+  end
+
   describe "dump/0 e format_dump/0" do
     test "mascara todos os segredos" do
       dump = RuntimeEnvs.dump()
 
-      for key <- [:openai_api_key, :grok_api_key, :telegram_webhook_secret] do
+      for key <- [:openai_api_key, :grok_api_key, :elevenlabs_api_key, :telegram_webhook_secret] do
         assert dump[key] =~ ~r/^\(vazia\)$|^definida \(\d+ chars\)$/
       end
     end

@@ -147,6 +147,32 @@ defmodule GptTalkerbotWeb.Services.Telegram do
     post("/sendAnimation", body)
   end
 
+  @doc """
+  Envia uma nota de voz (sendVoice) com os bytes de áudio em memória. Diferente
+  dos demais métodos, vai como multipart/form-data — o Tesla.Middleware.JSON
+  ignora structs Tesla.Multipart, então o mesmo post/2 serve.
+  """
+  def send_voice(%{voice: audio} = params) when is_binary(audio) do
+    post("/sendVoice", build_voice_multipart(params))
+  end
+
+  @doc false
+  def build_voice_multipart(%{chat_id: chat_id, voice: audio} = params) do
+    Tesla.Multipart.new()
+    |> Tesla.Multipart.add_field("chat_id", to_string(chat_id))
+    |> Tesla.Multipart.add_file_content(audio, "voz.ogg",
+      name: "voice",
+      headers: [{"content-type", "audio/ogg"}]
+    )
+    |> maybe_add_field("caption", params[:caption])
+    |> maybe_add_field("reply_to_message_id", params[:reply_to_message_id])
+  end
+
+  defp maybe_add_field(multipart, _name, nil), do: multipart
+
+  defp maybe_add_field(multipart, name, value),
+    do: Tesla.Multipart.add_field(multipart, name, to_string(value))
+
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 

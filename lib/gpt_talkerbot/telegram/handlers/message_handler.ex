@@ -3,7 +3,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   alias GptTalkerbot.Telegram.Message
   # SpiceChecker desativado no fluxo de chat (ver process_ai_message)
-  alias GptTalkerbotWeb.Services.Telegram
+  alias GptTalkerbotWeb.Services.{Telegram, TTS}
   alias GptTalkerbot.{GifMemory, LLM, Memory, PostActions, RuntimeEnvs}
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
@@ -196,6 +196,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, message) do
     result =
       cond do
+        :audio in actions -> send_with_audio(reply, message)
         :gif in actions -> send_with_gif(reply, message)
         message.chat_type == "private" -> send_rich_reply(reply, message)
         true -> send_message(reply, message)
@@ -270,6 +271,34 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         Telegram.send_animation(%{chat_id: to_string(chat_id), animation: gif.file_id})
         result
     end
+  end
+
+  # O modelo sinalizou [[ratobo:audio]]: a resposta vira nota de voz. O texto é
+  # a fala (limpo de HTML pro TTS) e vai junto como legenda. Qualquer falha
+  # (TTS fora, voz recusada) cai pro texto normal — o rato nunca fica mudo.
+  defp send_with_audio(reply, %{chat_id: chat_id, message_id: message_id} = message) do
+    with plain when plain != "" <- plain_text(reply),
+         {:ok, audio} <- TTS.synthesize(plain) do
+      %{
+        chat_id: to_string(chat_id),
+        voice: audio,
+        caption: String.slice(plain, 0, @caption_max),
+        reply_to_message_id: message_id
+      }
+      |> Telegram.send_voice()
+      |> case do
+        {:ok, %{status: 200}} -> :ok
+        _ -> send_message(reply, message)
+      end
+    else
+      _ -> send_message(reply, message)
+    end
+  end
+
+  defp plain_text(text) do
+    text
+    |> String.replace(~r/<[^>]+>/, "")
+    |> String.trim()
   end
 
   defp send_message(text, %{chat_id: chat_id, message_id: message_id} = message) do
