@@ -1,7 +1,7 @@
 defmodule GptTalkerbot.DailySummary do
   @moduledoc """
-  Posta o "resumo do dia" (recap debochado do GroupContext) em cada grupo
-  permitido, uma vez por dia no horário configurado.
+  Posta o "resumo do dia" (recap debochado das mensagens das últimas 24h) em
+  cada grupo permitido, uma vez por dia no horário configurado.
 
   Horário local via RuntimeEnvs (daily_summary_hour + utc_offset).
   daily_summary_hour fora de 0..23 desativa o recurso.
@@ -11,19 +11,22 @@ defmodule GptTalkerbot.DailySummary do
 
   require Logger
 
-  alias GptTalkerbot.{LLM, RuntimeEnvs}
-  alias GptTalkerbot.PromptSettings.{BotDefinitions, GroupContext}
+  alias GptTalkerbot.{GroupMessageCache, LLM, RuntimeEnvs}
+  alias GptTalkerbot.PromptSettings.BotDefinitions
   alias GptTalkerbot.Telegram.HtmlSanitizer
   alias GptTalkerbotWeb.Services.Telegram
 
   # Quando desativado, re-verifica a config de tempos em tempos
   @disabled_recheck_ms 6 * 60 * 60 * 1_000
 
+  # Janela real do "dia": só o que rolou nas últimas 24h entra no resumo
+  @window_hours 24
+
   @recap_instruction """
 
-  Abaixo está o resumo neutro do que rolou no grupo hoje. Escreva o "resumo do dia" \
+  Abaixo está a conversa do grupo nas últimas 24 horas. Escreva o "resumo do dia" \
   do Ratobô: debochado, curto, tirando sarro dos assuntos e de quem participou, \
-  sem inventar fatos que não estejam no resumo. Comece anunciando que é o resumo do dia.
+  sem inventar fatos que não estejam nas mensagens. Comece anunciando que é o resumo do dia.
   """
 
   def start_link(opts) do
@@ -74,22 +77,29 @@ defmodule GptTalkerbot.DailySummary do
   end
 
   defp post_summaries do
+    cutoff = DateTime.utc_now() |> DateTime.add(-@window_hours * 3600)
+
     Enum.each(RuntimeEnvs.get_allowed_groups(), fn chat_id ->
-      case GroupContext.get_context(chat_id) do
-        "" -> :ok
-        context -> post_summary(chat_id, context)
+      case GroupMessageCache.messages_since(chat_id, cutoff) do
+        [] -> :ok
+        messages -> post_summary(chat_id, messages)
       end
     end)
   end
 
-  defp post_summary(chat_id, context) do
+  defp post_summary(chat_id, messages) do
     system_prompt =
       RuntimeEnvs.get_default_prompt() <>
         @recap_instruction <> BotDefinitions.format_instruction()
 
-    messages = [%{role: "user", content: "Resumo neutro do dia:\n" <> context}]
+    llm_messages = [
+      %{
+        role: "user",
+        content: "Conversa do grupo nas últimas 24h:\n" <> GroupMessageCache.format_transcript(messages)
+      }
+    ]
 
-    case LLM.complete_text(messages, prompt: system_prompt, max_tokens: 500) do
+    case LLM.complete_text(llm_messages, prompt: system_prompt, max_tokens: 500) do
       {:ok, recap} ->
         Telegram.send_message(%{
           chat_id: to_string(chat_id),

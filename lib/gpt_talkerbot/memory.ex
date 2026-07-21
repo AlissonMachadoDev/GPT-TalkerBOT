@@ -5,16 +5,15 @@ defmodule GptTalkerbot.Memory do
   alias GptTalkerbot.Memory.{ConversationMessage, UserFact, ContextFilter, GroupMessage}
   alias GptTalkerbot.PromptSettings.GroupContextSchema
 
-  @max_age_hours 4
-
   # --- Conversa ---
 
   def get_context(chat_id, user_id, current_text) do
-    cutoff = DateTime.utc_now() |> DateTime.add(-@max_age_hours * 3600)
     max_messages = RuntimeEnvs.get_max_context_messages()
 
+    # Sem corte por idade: o recorte fica por conta do teto de mensagens e do
+    # trim_to_last_session (gap de sessão)
     ConversationMessage
-    |> where([m], m.chat_id == ^chat_id and m.user_id == ^user_id and m.inserted_at > ^cutoff)
+    |> where([m], m.chat_id == ^chat_id and m.user_id == ^user_id)
     |> order_by([m], desc: m.inserted_at)
     |> limit(^max_messages)
     |> select([m], %{role: m.role, content: m.content, inserted_at: m.inserted_at})

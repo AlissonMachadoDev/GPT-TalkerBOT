@@ -7,6 +7,7 @@ defmodule GptTalkerbot.Memory.GroupMessage do
     field :chat_id, :string
     field :sender_name, :string
     field :content, :string
+    field :processed_at, :utc_datetime_usec
 
     timestamps(updated_at: false)
   end

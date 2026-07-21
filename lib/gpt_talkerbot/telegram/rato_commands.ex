@@ -5,7 +5,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     /humor    - mostra o mood atual do chat
     /fatos    - lista o que o bot sabe sobre o usuário
     /esquece  - apaga os fatos guardados sobre o usuário
-    /resumo   - recap debochado do contexto recente do grupo
+    /resumo   - recap debochado das últimas 12h do grupo
     /enquete_random - enquete maliciosa com os membros do grupo como opções
     /enquete <instrução> - enquete gerada a partir da instrução dada
     /sorte    - animação nativa de dado/dardo/caça-níquel
@@ -32,7 +32,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   }
 
   alias GptTalkerbot.Memory.ContextJanitor
-  alias GptTalkerbot.PromptSettings.{BotDefinitions, GroupContext}
+  alias GptTalkerbot.PromptSettings.BotDefinitions
   alias GptTalkerbot.Telegram.{HtmlSanitizer, RichMessages}
   alias GptTalkerbotWeb.Services.Telegram
 
@@ -74,11 +74,14 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     dramatico: "AH, a vida de um rato de metal é uma NOVELA. Uma tragédia em cada válvula. 🎭"
   }
 
+  # Janela do /resumo: só o que rolou nas últimas 12h entra no recap
+  @resumo_window_hours 12
+
   @resumo_instruction """
 
-  Abaixo está o resumo neutro do que rolou no grupo recentemente. Reescreva como \
+  Abaixo está a conversa do grupo nas últimas 12 horas. Reescreva como \
   o "resumo do dia" do Ratobô: debochado, curto, tirando sarro dos assuntos e de \
-  quem participou, sem inventar fatos que não estejam no resumo.
+  quem participou, sem inventar fatos que não estejam nas mensagens.
   """
 
   def commands, do: @commands
@@ -111,13 +114,15 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   end
 
   def handle("resumo", %{"chat" => %{"id" => chat_id}} = message) do
-    case GroupContext.get_context(chat_id) do
-      "" ->
+    cutoff = DateTime.utc_now() |> DateTime.add(-@resumo_window_hours * 3600)
+
+    case GroupMessageCache.messages_since(chat_id, cutoff) do
+      [] ->
         reply(message, "Resumo do dia: nada. Absolutamente nada digno de nota aconteceu aqui. 🧀")
 
-      context ->
+      messages ->
         Telegram.send_typing(to_string(chat_id))
-        recap = roast_recap(context)
+        recap = roast_recap(messages)
 
         case Telegram.send_rich_message(%{
                chat_id: chat_id,
@@ -547,20 +552,21 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   # O recap sai em Markdown porque vira rich message — tabelas, listas e
   # spoilers entram no repertório do deboche. O HtmlSanitizer não se aplica:
   # ele conserta tags HTML, e aqui não pode haver nenhuma.
-  defp roast_recap(context) do
+  defp roast_recap(messages) do
     system_prompt =
       RuntimeEnvs.get_default_prompt() <>
         @resumo_instruction <> BotDefinitions.rich_format_instruction()
 
-    messages = [%{role: "user", content: "Resumo neutro:\n" <> context}]
+    transcript = GroupMessageCache.format_transcript(messages)
+    llm_messages = [%{role: "user", content: "Conversa do grupo nas últimas 12h:\n" <> transcript}]
 
-    case LLM.complete_text(messages, prompt: system_prompt, max_tokens: 500) do
+    case LLM.complete_text(llm_messages, prompt: system_prompt, max_tokens: 500) do
       {:ok, recap} ->
         String.trim(recap)
 
       {:error, reason} ->
         Logger.warning("RatoCommands: recap AI call failed: #{inspect(reason)}")
-        "Meu redator interno travou, vai o rascunho cru mesmo:\n\n" <> context
+        "Meu redator interno travou, vai o rascunho cru mesmo:\n\n" <> transcript
     end
   end
 

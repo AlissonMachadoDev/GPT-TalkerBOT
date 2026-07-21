@@ -12,6 +12,15 @@ defmodule GptTalkerbot.GroupMessageCache do
   @extraction_batch 20
   @bot_name "Ratobô"
 
+  # As mensagens ficam retidas como "log do dia" (fonte do resumo diário) e são
+  # envelhecidas depois desse prazo, independente de já terem sido resumidas
+  @retention_hours 48
+  @cleanup_interval_ms 6 * 60 * 60 * 1_000
+
+  # Teto de mensagens que o resumo diário lê por chat, para o prompt não estourar
+  # em grupos muito movimentados
+  @daily_read_limit 500
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -55,9 +64,61 @@ defmodule GptTalkerbot.GroupMessageCache do
     GenServer.call(__MODULE__, {:clear, to_string(chat_id)})
   end
 
+  @doc """
+  Mensagens do chat a partir de `cutoff` (`DateTime`), em ordem cronológica.
+  Inclui as já resumidas — é o log cru que alimenta o resumo diário. Limitado
+  às `#{@daily_read_limit}` mais recentes da janela.
+  """
+  def messages_since(chat_id, %DateTime{} = cutoff) do
+    GroupMessage
+    |> where([m], m.chat_id == ^to_string(chat_id) and m.inserted_at >= ^cutoff)
+    |> order_by([m], desc: m.inserted_at)
+    |> limit(@daily_read_limit)
+    |> select([m], %{sender_name: m.sender_name, content: m.content, inserted_at: m.inserted_at})
+    |> Repo.all()
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Formata mensagens (as retornadas por `messages_since/2`) como transcrição
+  legível `[HH:MM] Nome: texto`, para alimentar prompts de resumo.
+  """
+  def format_transcript(messages) do
+    Enum.map_join(messages, "\n", fn m ->
+      ts = m.inserted_at |> NaiveDateTime.to_time() |> Time.to_string() |> String.slice(0, 5)
+      "[#{ts}] #{m.sender_name}: #{m.content}"
+    end)
+  end
+
   @impl true
   def init(_opts) do
+    schedule_cleanup()
     {:ok, %{}}
+  end
+
+  @impl true
+  def handle_info(:cleanup, state) do
+    cutoff = DateTime.utc_now() |> DateTime.add(-@retention_hours * 3600)
+    count = purge_older_than(cutoff)
+
+    if count > 0, do: Logger.info("GroupMessageCache: envelheceu #{count} mensagens antigas")
+
+    schedule_cleanup()
+    {:noreply, state}
+  end
+
+  @doc false
+  def purge_older_than(%DateTime{} = cutoff) do
+    {count, _} =
+      GroupMessage
+      |> where([m], m.inserted_at < ^cutoff)
+      |> Repo.delete_all()
+
+    count
+  end
+
+  defp schedule_cleanup do
+    Process.send_after(self(), :cleanup, @cleanup_interval_ms)
   end
 
   @impl true
@@ -144,25 +205,28 @@ defmodule GptTalkerbot.GroupMessageCache do
   defp trigger_extraction(chat_id, messages) do
     Task.start(fn ->
       GptTalkerbot.PromptSettings.GroupContextExtractor.extract_and_update(chat_id, messages)
-      delete_processed_from_db(chat_id, messages)
+      mark_processed(chat_id, messages)
     end)
   end
 
-  defp delete_processed_from_db(chat_id, messages) do
+  # Antes as mensagens resumidas eram apagadas; agora ficam retidas como log do
+  # dia e só são marcadas, para não voltarem ao buffer nem serem resumidas de novo
+  defp mark_processed(chat_id, messages) do
     oldest_ts = messages |> List.first() |> Map.get(:inserted_at)
     newest_ts = messages |> List.last() |> Map.get(:inserted_at)
 
     GroupMessage
     |> where(
       [m],
-      m.chat_id == ^chat_id and m.inserted_at >= ^oldest_ts and m.inserted_at <= ^newest_ts
+      m.chat_id == ^chat_id and m.inserted_at >= ^oldest_ts and m.inserted_at <= ^newest_ts and
+        is_nil(m.processed_at)
     )
-    |> Repo.delete_all()
+    |> Repo.update_all(set: [processed_at: DateTime.utc_now()])
   end
 
   defp load_recent_from_db(chat_id) do
     GroupMessage
-    |> where([m], m.chat_id == ^chat_id)
+    |> where([m], m.chat_id == ^chat_id and is_nil(m.processed_at))
     |> order_by([m], desc: m.inserted_at)
     |> limit(@buffer_limit)
     |> select([m], %{sender_name: m.sender_name, content: m.content, inserted_at: m.inserted_at})
