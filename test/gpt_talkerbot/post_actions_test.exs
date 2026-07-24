@@ -59,4 +59,38 @@ defmodule GptTalkerbot.PostActionsTest do
       assert PostActions.strip(question) == "Quem do grupo mais merece um GIF?"
     end
   end
+
+  describe "strip_audio_tags/1" do
+    test "remove a audio tag do texto visível" do
+      assert PostActions.strip_audio_tags("[sarcastic] ah, que surpresa") == "ah, que surpresa"
+    end
+
+    test "tag no meio da frase não deixa espaço duplo" do
+      assert PostActions.strip_audio_tags("toma essa [laughs] e chora") == "toma essa e chora"
+    end
+
+    test "tag composta em inglês também some" do
+      assert PostActions.strip_audio_tags("essa foi boa [laughs harder] né") == "essa foi boa né"
+    end
+
+    test "múltiplas tags saem todas" do
+      assert PostActions.strip_audio_tags("[whispers] segredo [sighs] pronto") == "segredo pronto"
+    end
+
+    test "colchetes com dígito de usuário são preservados" do
+      assert PostActions.strip_audio_tags("o placar foi [2x1] ontem") == "o placar foi [2x1] ontem"
+    end
+
+    test "diretiva [[ratobo:...]] de colchete duplo não é confundida com tag" do
+      assert PostActions.strip_audio_tags("fala aí\n[[ratobo:audio]]") == "fala aí\n[[ratobo:audio]]"
+    end
+
+    test "texto sem tag sai intacto" do
+      assert PostActions.strip_audio_tags("kkkk clássico do Beto") == "kkkk clássico do Beto"
+    end
+
+    test "nil vira string vazia" do
+      assert PostActions.strip_audio_tags(nil) == ""
+    end
+  end
 end

@@ -81,7 +81,12 @@ defmodule GptTalkerbotWeb.Services.TTS do
     else
       client = elevenlabs_client(key)
       url = "/text-to-speech/#{voice}?output_format=#{@elevenlabs_output_format}"
-      body = %{"text" => text, "model_id" => RuntimeEnvs.get_elevenlabs_model()}
+
+      body = %{
+        "text" => text,
+        "model_id" => RuntimeEnvs.get_elevenlabs_model(),
+        "voice_settings" => RuntimeEnvs.get_elevenlabs_voice_settings()
+      }
 
       audio_or_error(Tesla.post(client, url, body))
     end

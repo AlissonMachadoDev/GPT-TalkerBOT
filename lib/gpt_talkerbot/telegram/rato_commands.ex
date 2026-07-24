@@ -28,6 +28,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     LLM,
     Memory,
     MoodTracker,
+    PostActions,
     RuntimeEnvs,
     Warns
   }
@@ -62,7 +63,10 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   O usuário vai te dar um tema ou pedido. Responda no seu tom debochado como se \
   estivesse FALANDO em voz alta. Texto puro para um sintetizador de voz ler: sem \
   emojis, sem asteriscos, sem markdown, sem HTML, sem links. Frases curtas e \
-  naturais, no máximo 3 frases.
+  naturais, no máximo 3 frases. Você PODE dirigir a entrega com audio tags entre \
+  colchetes no meio da fala — [sarcastic], [laughs], [whispers], [sighs], \
+  [excited], [mischievously] — pra variar o tom conforme a situação. No máximo \
+  uma ou duas por fala, só quando somam à interpretação.
   """
 
   @warn_instruction """
@@ -625,10 +629,13 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   end
 
   defp send_voice_reply(%{"message_id" => message_id}, chat_id, audio, fala) do
+    # A fala foi pro TTS com as audio tags do v3; a legenda sai sem elas
+    caption = fala |> PostActions.strip_audio_tags() |> String.slice(0, 1024)
+
     Telegram.send_voice(%{
       chat_id: to_string(chat_id),
       voice: audio,
-      caption: String.slice(fala, 0, 1024),
+      caption: caption,
       reply_to_message_id: to_string(message_id)
     })
   end

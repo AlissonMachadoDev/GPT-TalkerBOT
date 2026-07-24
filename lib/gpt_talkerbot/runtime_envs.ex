@@ -39,7 +39,17 @@ defmodule GptTalkerbot.RuntimeEnvs do
     # Mapa nome->voice_id (formato "default:<id>;male_1:<id>"), pra escolher a
     # voz por contexto. Por ora só a "default" é usada.
     elevenlabs_voices: %{},
-    elevenlabs_model: "eleven_multilingual_v2",
+    # eleven_v3: entende audio tags inline ([sarcastic], [laughs]...) e devolve
+    # opus, o container que o sendVoice espera. É mais caro por caractere que o
+    # v2, mas é o que dá voz dinâmica por situação.
+    elevenlabs_model: "eleven_v3",
+    # voice_settings enviado a cada síntese. stability 0.5 (Natural no v3) segura
+    # a voz sem matar a expressividade das tags; abaixo disso ela viaja demais.
+    elevenlabs_voice_settings: %{
+      "stability" => 0.5,
+      "similarity_boost" => 0.75,
+      "use_speaker_boost" => true
+    },
     relevance_threshold: 0.4,
     always_include_last: 4,
     max_context_messages: 20,
@@ -144,6 +154,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_elevenlabs_api_key, do: get(:elevenlabs_api_key)
   def get_elevenlabs_model, do: get(:elevenlabs_model)
   def get_elevenlabs_voices, do: get(:elevenlabs_voices)
+  def get_elevenlabs_voice_settings, do: get(:elevenlabs_voice_settings)
 
   @doc """
   Voice_id da ElevenLabs para o contexto `name` (default "default"). Cai na voz

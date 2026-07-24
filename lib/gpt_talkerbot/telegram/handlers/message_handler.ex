@@ -85,7 +85,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       # e repetitivo (tabelas) — 0.2 segura repetição sem esse risco
       frequency_penalty: 0.2,
       presence_penalty: 0.2,
-      max_tokens: if(provider == :grok, do: 2000, else: 1000)
+      max_tokens: 2000
     )
   end
 
@@ -277,21 +277,25 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # a fala (limpo de HTML pro TTS) e vai junto como legenda. Qualquer falha
   # (TTS fora, voz recusada) cai pro texto normal — o rato nunca fica mudo.
   defp send_with_audio(reply, %{chat_id: chat_id, message_id: message_id} = message) do
-    with plain when plain != "" <- plain_text(reply),
-         {:ok, audio} <- TTS.synthesize(plain) do
+    # O texto vai com as audio tags do v3 pro sintetizador; a legenda e o
+    # fallback de texto saem sem elas, pra ninguém ler "[sarcastic]" escrito.
+    with spoken when spoken != "" <- plain_text(reply),
+         {:ok, audio} <- TTS.synthesize(spoken) do
+      caption = spoken |> PostActions.strip_audio_tags() |> String.slice(0, @caption_max)
+
       %{
         chat_id: to_string(chat_id),
         voice: audio,
-        caption: String.slice(plain, 0, @caption_max),
+        caption: caption,
         reply_to_message_id: message_id
       }
       |> Telegram.send_voice()
       |> case do
         {:ok, %{status: 200}} -> :ok
-        _ -> send_message(reply, message)
+        _ -> send_message(PostActions.strip_audio_tags(reply), message)
       end
     else
-      _ -> send_message(reply, message)
+      _ -> send_message(PostActions.strip_audio_tags(reply), message)
     end
   end
 
