@@ -13,7 +13,9 @@ defmodule GptTalkerbot.PromptSettings.ContextTools do
   @prompt_hint "\n\nVocê tem ferramentas para consultar quem está no chat, o pano de fundo " <>
                  "das conversas recentes, o que você sabe sobre uma pessoa específica e o " <>
                  "placar de warns. Use-as quando a mensagem envolver os membros do grupo " <>
-                 "ou fizer referência a algo que você não vê no histórico."
+                 "ou fizer referência a algo que você não vê no histórico. " <>
+                 "Nunca escreva o nome de uma ferramenta na resposta: ou chame a " <>
+                 "ferramenta de verdade, ou responda sem ela."
 
   def prompt_hint, do: @prompt_hint
 
@@ -139,13 +141,24 @@ defmodule GptTalkerbot.PromptSettings.ContextTools do
 
   defp run(name, _args, _chat_id), do: "Ferramenta desconhecida: #{name}"
 
+  # Nome exato ganha sempre. Prefixo só resolve se for único: com dois
+  # membros casando o prefixo, devolver o primeiro (ordem alfabética)
+  # atribuía fatos à pessoa errada — melhor dizer "não conheço".
   defp find_member(chat_id, nome) do
     alvo = String.downcase(String.trim(nome))
+    members = ChatMembers.list_members(chat_id)
 
-    ChatMembers.list_members(chat_id)
-    |> Enum.find(fn m ->
-      first_name = String.downcase(m.first_name || "")
-      first_name == alvo or String.starts_with?(first_name, alvo)
-    end)
+    exact = Enum.find(members, fn m -> String.downcase(m.first_name || "") == alvo end)
+
+    exact || unique_prefix_match(members, alvo)
+  end
+
+  defp unique_prefix_match(members, alvo) do
+    members
+    |> Enum.filter(fn m -> String.starts_with?(String.downcase(m.first_name || ""), alvo) end)
+    |> case do
+      [only] -> only
+      _ -> nil
+    end
   end
 end

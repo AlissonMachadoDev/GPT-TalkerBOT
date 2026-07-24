@@ -1,4 +1,5 @@
 defmodule GptTalkerbot.PromptSettings.Personality do
+  alias GptTalkerbot.ChatMembers
   alias GptTalkerbot.Memory
   alias GptTalkerbot.MoodTracker
   alias GptTalkerbot.RuntimeEnvs
@@ -30,21 +31,35 @@ defmodule GptTalkerbot.PromptSettings.Personality do
 
   def build_system_prompt(user_id, chat_id) do
     base = RuntimeEnvs.get_default_prompt()
+    name = ChatMembers.get_first_name(chat_id, user_id)
     facts = Memory.get_user_facts(user_id) |> Enum.take(@max_prompt_facts)
     mood = MoodTracker.get_mood(chat_id)
 
     base
-    |> append_facts(facts)
+    |> anchor_identity(name)
+    |> append_facts(name, facts)
     |> apply_mood(mood)
   end
 
-  defp append_facts(prompt, []), do: prompt
+  # Sem ancorar quem está falando, os fatos ficam soltos e o modelo pega um
+  # nome qualquer da lista de membros para dirigir a resposta — chamando a
+  # pessoa pelo nome de outra.
+  defp anchor_identity(prompt, nil), do: prompt
 
-  defp append_facts(prompt, facts) do
+  defp anchor_identity(prompt, name) do
+    prompt <>
+      "\n\nVocê está respondendo agora a #{name}. Dirija-se a essa pessoa por esse " <>
+      "nome; não a confunda com outros membros do chat."
+  end
+
+  defp append_facts(prompt, _name, []), do: prompt
+
+  defp append_facts(prompt, name, facts) do
     facts_text = Enum.map_join(facts, "\n", fn f -> "- #{f.key}: #{f.value}" end)
+    quem = name || "este usuário"
 
     prompt <>
-      "\n\nFatos sobre este usuário — use somente se encaixar naturalmente na resposta; não cite só porque sabe:\n" <>
+      "\n\nFatos sobre #{quem} — use somente se encaixar naturalmente na resposta; não cite só porque sabe:\n" <>
       facts_text
   end
 

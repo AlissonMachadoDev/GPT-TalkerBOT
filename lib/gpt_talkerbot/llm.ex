@@ -95,9 +95,70 @@ defmodule GptTalkerbot.LLM do
           tool_loop(messages ++ [assistant_msg | results], opts, executor, rounds_left - 1)
 
         _ ->
-          {:ok, body}
+          # Sem tool_calls estruturado. O modelo às vezes *lista os nomes* das
+          # ferramentas que queria usar como texto (ex.: "get_group_members\n
+          # get_group_context") em vez de chamá-las — e isso vazava como fala
+          # do bot. Executa as que ele nomeou e devolve o resultado para ele
+          # responder de verdade, agora sem tools (senão repete o vazamento).
+          case narrated_tools(message["content"], opts[:tools]) do
+            names when names != [] and rounds_left > 0 ->
+              tool_loop(messages ++ [narrated_recovery(names, executor)], opts, executor, 0)
+
+            _ ->
+              {:ok, body}
+          end
       end
     end
+  end
+
+  # Mensagem de recuperação: injeta o resultado das ferramentas nomeadas e
+  # manda o modelo responder sem citar nomes. Entra como "user" porque não há
+  # tool_call_id — a API rejeita role "tool" sem um tool_calls que a preceda.
+  defp narrated_recovery(names, executor) do
+    resultados = Enum.map_join(names, "\n\n", fn n -> executor.(n, "{}") end)
+
+    %{
+      role: "user",
+      content:
+        "[sistema] Você escreveu nomes de ferramentas em vez de usá-las. Segue o " <>
+          "resultado delas — responda a mensagem de verdade, com naturalidade e " <>
+          "sem citar nome de ferramenta:\n\n" <> resultados
+    }
+  end
+
+  @doc false
+  # Lista de nomes de ferramentas se o content é composto *só* por nomes
+  # conhecidos (um por linha ou separados por vírgula); [] caso contrário,
+  # para não disparar quando um nome aparece no meio de uma frase real.
+  # Público só para teste — o fluxo usa via tool_loop.
+  def narrated_tools(content, tools) when is_binary(content) and is_list(tools) do
+    known = tool_names(tools)
+
+    tokens =
+      content
+      |> String.split(~r/[\n,]+/)
+      |> Enum.map(&normalize_tool_token/1)
+      |> Enum.reject(&(&1 == ""))
+
+    if tokens != [] and Enum.all?(tokens, &(&1 in known)) do
+      Enum.uniq(tokens)
+    else
+      []
+    end
+  end
+
+  def narrated_tools(_content, _tools), do: []
+
+  defp normalize_tool_token(token) do
+    token
+    |> String.trim()
+    |> String.trim("`")
+    |> String.replace(~r/\(\)\s*$/, "")
+    |> String.trim()
+  end
+
+  defp tool_names(tools) do
+    Enum.map(tools, fn t -> get_in(t, [:function, :name]) || get_in(t, ["function", "name"]) end)
   end
 
   @doc """

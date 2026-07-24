@@ -77,6 +77,14 @@ defmodule GptTalkerbot.ChatMembers do
     |> Repo.all()
   end
 
+  @doc "Primeiro nome do membro neste chat, ou nil se ainda desconhecido"
+  def get_first_name(chat_id, user_id) do
+    ChatMember
+    |> where([m], m.chat_id == ^to_string(chat_id) and m.user_id == ^to_string(user_id))
+    |> select([m], m.first_name)
+    |> Repo.one()
+  end
+
   @doc "Nomes dos membros ativos, para injetar em prompts"
   def list_names(chat_id, limit \\ @max_listed) do
     list_members(chat_id, limit)

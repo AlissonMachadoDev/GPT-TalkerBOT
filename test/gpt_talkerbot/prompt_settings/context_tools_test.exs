@@ -68,6 +68,36 @@ defmodule GptTalkerbot.PromptSettings.ContextToolsTest do
                ~s(Não conheço ninguém chamado "Zumbi")
     end
 
+    test "prefixo único resolve para o membro certo" do
+      track(111, "Marcela")
+      Memory.upsert_fact("111", "profissão", "dentista")
+
+      result = ContextTools.execute("get_user_facts", ~s({"nome": "marc"}), @chat_id)
+
+      assert result =~ "profissão: dentista"
+    end
+
+    test "prefixo ambíguo não devolve fatos da pessoa errada" do
+      track(111, "Marcela")
+      track(222, "Marcos")
+      Memory.upsert_fact("111", "profissão", "dentista")
+
+      result = ContextTools.execute("get_user_facts", ~s({"nome": "mar"}), @chat_id)
+
+      refute result =~ "dentista"
+      assert result =~ ~s(Não conheço ninguém chamado "mar")
+    end
+
+    test "nome exato ganha de prefixo de outro membro" do
+      track(111, "Ana")
+      track(222, "Anabela")
+      Memory.upsert_fact("111", "cidade", "Recife")
+
+      result = ContextTools.execute("get_user_facts", ~s({"nome": "Ana"}), @chat_id)
+
+      assert result =~ "cidade: Recife"
+    end
+
     test "chamada sem o argumento nome pede o nome de volta" do
       assert ContextTools.execute("get_user_facts", "{}", @chat_id) =~ "informando o nome"
     end
