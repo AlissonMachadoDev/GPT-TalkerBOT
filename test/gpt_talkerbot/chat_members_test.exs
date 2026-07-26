@@ -215,16 +215,15 @@ defmodule GptTalkerbot.ChatMembersTest do
     end
 
     test "separa quem participa de quem só consta" do
-      ChatMembers.track(@chat_id, user(1, "Tagarela"))
-      ChatMembers.track(@chat_id, user(2, "Lurker"))
-      set_count("1", 40)
+      track_frequent(3)
+      ChatMembers.track(@chat_id, user(99, "Lurker"))
 
       section = ChatMembers.prompt_section(@chat_id)
       [pickable, reference] = String.split(section, "Também estão no grupo")
 
-      assert pickable =~ "Tagarela (id 1)"
+      assert pickable =~ "Frequente1 (id 1)"
       refute pickable =~ "Lurker"
-      assert reference =~ "Lurker (id 2)"
+      assert reference =~ "Lurker (id 99)"
     end
 
     test "sem frequentes, todo mundo é sorteável e não há lista de referência" do
@@ -237,15 +236,54 @@ defmodule GptTalkerbot.ChatMembersTest do
     end
 
     test "admin semeado que nunca falou não entra no sorteio" do
-      ChatMembers.track(@chat_id, user(1, "Faladora"))
-      ChatMembers.track(@chat_id, user(2, "AdminMudo"))
-      set_count("1", 40)
+      track_frequent(3)
+      ChatMembers.track(@chat_id, user(99, "AdminMudo"))
 
       [pickable, _reference] =
         @chat_id |> ChatMembers.prompt_section() |> String.split("Também estão no grupo")
 
       refute pickable =~ "AdminMudo"
     end
+
+    # A regressão que fez o bot cutucar a mesma pessoa a tarde inteira: logo
+    # depois do deploy só um membro tinha last_message_at, virou o único
+    # sorteável e todo o resto do grupo foi para a lista de referência
+    test "com frequentes de menos, ninguém vira sorteável exclusivo" do
+      ChatMembers.track(@chat_id, user(1, "PrimeiroAFalar"))
+      ChatMembers.track(@chat_id, user(2, "Silenciosa"))
+      ChatMembers.track(@chat_id, user(3, "Outra"))
+      set_count("1", 40)
+
+      section = ChatMembers.prompt_section(@chat_id)
+
+      refute section =~ "Também estão no grupo"
+      assert section =~ "Silenciosa (id 2)"
+      assert section =~ "Outra (id 3)"
+    end
+
+    test "a ordem da lista varia entre chamadas" do
+      track_frequent(6)
+
+      primeiros =
+        for _ <- 1..30, into: MapSet.new() do
+          @chat_id |> ChatMembers.prompt_section() |> first_listed_name()
+        end
+
+      assert MapSet.size(primeiros) > 1
+    end
+  end
+
+  defp track_frequent(count) do
+    for i <- 1..count do
+      ChatMembers.track(@chat_id, user(i, "Frequente#{i}"))
+      set_count(to_string(i), 10 + i)
+    end
+  end
+
+  defp first_listed_name(section) do
+    [_, resto] = String.split(section, "variando quem você escolhe: ", parts: 2)
+    [nome | _] = String.split(resto, " (id", parts: 2)
+    nome
   end
 
   # days_ago simula quem falou muito mas sumiu — o contador é vitalício, é a

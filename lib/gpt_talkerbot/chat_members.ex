@@ -157,6 +157,11 @@ defmodule GptTalkerbot.ChatMembers do
     |> Repo.all()
   end
 
+  # Abaixo de @min_pool frequentes não dá para restringir o sorteio a eles:
+  # com um frequente só, o bot cutuca a mesma pessoa a tarde inteira. Nesse
+  # caso vale a lista ranqueada inteira, que é ruim mas não vira perseguição.
+  @min_pool 3
+
   @doc """
   Bloco pronto para system prompt: quem está no chat + como mencionar
   com notificação. Retorna "" se o chat ainda não tem membros conhecidos.
@@ -167,18 +172,26 @@ defmodule GptTalkerbot.ChatMembers do
   """
   def prompt_section(chat_id) do
     frequent = list_frequent_members(chat_id, @max_listed)
-    others = list_others(chat_id, frequent, @max_listed - length(frequent))
 
-    case {frequent, others} do
-      {[], []} -> ""
-      {[], others} -> section(others, [])
-      {frequent, others} -> section(frequent, others)
+    {pickable, reference} =
+      if length(frequent) >= @min_pool do
+        {frequent, list_others(chat_id, frequent, @max_listed - length(frequent))}
+      else
+        {list_ranked_members(chat_id, @max_listed), []}
+      end
+
+    case pickable do
+      [] -> ""
+      members -> section(Enum.shuffle(members), reference)
     end
   end
 
+  # A lista vai embaralhada de propósito: o modelo escolhe o primeiro nome que
+  # lê, então lista ordenada — por nome ou por contagem, tanto faz — faz ele
+  # cutucar sempre a mesma pessoa. A ordem não carrega informação nenhuma.
   defp section(pickable, reference) do
     "\n\nPessoas deste chat que participam das conversas — escolha, sorteie ou " <>
-      "mencione SOMENTE alguém desta lista: " <>
+      "mencione SOMENTE alguém desta lista, variando quem você escolhe: " <>
       format_members(pickable) <>
       reference_line(reference) <>
       "\nPara mencionar alguém notificando a pessoa, escreva exatamente " <>

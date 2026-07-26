@@ -522,7 +522,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
     members =
       case poll_members(chat_id) do
         [] -> "(nenhuma pessoa conhecida ainda)"
-        active -> Enum.map_join(active, ", ", & &1.first_name)
+        active -> active |> Enum.shuffle() |> Enum.map_join(", ", & &1.first_name)
       end
 
     user_content = "Pessoas do grupo: #{members}\n\nInstrução da enquete: #{instruction}"
