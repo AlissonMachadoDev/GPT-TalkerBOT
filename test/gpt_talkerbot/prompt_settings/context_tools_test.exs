@@ -88,6 +88,16 @@ defmodule GptTalkerbot.PromptSettings.ContextToolsTest do
       assert result =~ ~s(Não conheço ninguém chamado "mar")
     end
 
+    test "acha quem está fora das 30 primeiras da ordem alfabética" do
+      for i <- 1..40, do: track(i, "Membro#{String.pad_leading(to_string(i), 2, "0")}")
+      track(999, "Zulmira")
+      Memory.upsert_fact("999", "cidade", "Recife")
+
+      result = ContextTools.execute("get_user_facts", ~s({"nome": "Zulmira"}), @chat_id)
+
+      assert result =~ "cidade: Recife"
+    end
+
     test "nome exato ganha de prefixo de outro membro" do
       track(111, "Ana")
       track(222, "Anabela")

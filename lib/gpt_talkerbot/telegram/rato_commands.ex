@@ -42,6 +42,11 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
 
   @dice_emojis ["🎲", "🎯", "🏀", "⚽", "🎳", "🎰"]
 
+  # A enquete cabe 8 opções, mas o páreo é maior para o sorteio não devolver
+  # sempre os mesmos nomes — variedade dentro de quem participa
+  @poll_options 8
+  @poll_pool 12
+
   @enquete_instruction """
 
   Crie UMA pergunta de enquete maliciosa e debochada sobre o grupo, do tipo \
@@ -169,7 +174,7 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   end
 
   def handle("enquete_random", %{"chat" => %{"id" => chat_id}} = message) do
-    members = poll_members(chat_id) |> Enum.shuffle() |> Enum.take(8)
+    members = poll_members(chat_id) |> Enum.shuffle() |> Enum.take(@poll_options)
 
     if length(members) < 2 do
       reply(
@@ -465,23 +470,20 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
   end
 
   # Enquete só com quem participa de verdade — todos com o mesmo peso no
-  # sorteio. Enquanto o contador não conhece gente o suficiente (grupo
-  # recém-migrado), vale a lista completa, como antes.
+  # sorteio. Faltando frequentes para encher o páreo (grupo recém-migrado),
+  # completa com os mais falantes entre os demais: cair na lista inteira
+  # jogava os lurkers de volta com o mesmo peso de quem conversa.
   defp poll_members(chat_id) do
-    members =
-      case ChatMembers.list_frequent_members(chat_id) do
-        frequent when length(frequent) >= 2 -> frequent
-        _ -> ChatMembers.list_members(chat_id)
-      end
-
-    Enum.reject(members, &is_nil(&1.first_name))
+    chat_id
+    |> ChatMembers.list_ranked_members(@poll_pool)
+    |> Enum.reject(&is_nil(&1.first_name))
   end
 
   # Na /enquete custom o LLM devolve opções em texto; quando uma opção é o
   # nome de alguém da listagem de membros, a foto entra junto
   defp illustrate_member_options(options, chat_id) do
     options
-    |> match_member_options(ChatMembers.list_members(chat_id))
+    |> match_member_options(ChatMembers.list_members(chat_id, :all))
     |> Enum.map(fn
       {text, nil} -> text
       {text, member} -> poll_option_with_photo(%{user_id: member.user_id, first_name: text})
@@ -586,7 +588,10 @@ defmodule GptTalkerbot.Telegram.RatoCommands do
         @resumo_instruction <> BotDefinitions.rich_format_instruction()
 
     transcript = GroupMessageCache.format_transcript(messages)
-    llm_messages = [%{role: "user", content: "Conversa do grupo nas últimas 12h:\n" <> transcript}]
+
+    llm_messages = [
+      %{role: "user", content: "Conversa do grupo nas últimas 12h:\n" <> transcript}
+    ]
 
     case LLM.complete_text(llm_messages, prompt: system_prompt, max_tokens: 500) do
       {:ok, recap} ->

@@ -146,7 +146,7 @@ defmodule GptTalkerbot.PromptSettings.ContextTools do
   # atribuía fatos à pessoa errada — melhor dizer "não conheço".
   defp find_member(chat_id, nome) do
     alvo = String.downcase(String.trim(nome))
-    members = ChatMembers.list_members(chat_id)
+    members = ChatMembers.list_members(chat_id, :all)
 
     exact = Enum.find(members, fn m -> String.downcase(m.first_name || "") == alvo end)
 

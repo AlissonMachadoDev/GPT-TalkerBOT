@@ -37,14 +37,16 @@ defmodule GptTalkerbot.ChatMembers do
 
   def track_async(_chat_id, _user), do: :ok
 
-  @doc "Registra o membro e incrementa o contador de mensagens dele"
+  @doc "Registra o membro, incrementa o contador dele e marca a hora da mensagem"
   def track_activity(chat_id, %{"id" => id} = user) do
     track(chat_id, user)
 
     unless user["is_bot"] do
+      now = DateTime.truncate(DateTime.utc_now(), :second)
+
       ChatMember
       |> where([m], m.chat_id == ^to_string(chat_id) and m.user_id == ^to_string(id))
-      |> Repo.update_all(inc: [message_count: 1])
+      |> Repo.update_all(inc: [message_count: 1], set: [last_message_at: now])
     end
 
     :ok
@@ -68,14 +70,21 @@ defmodule GptTalkerbot.ChatMembers do
 
   def mark_left(_chat_id, _user), do: :ok
 
-  @doc "Membros ativos do chat, em ordem alfabética"
+  @doc """
+  Membros ativos do chat, em ordem alfabética. Use `:all` como limite para
+  busca por nome — com o corte, quem tem nome no fim do alfabeto some da
+  consulta e vira "não conheço essa pessoa".
+  """
   def list_members(chat_id, limit \\ @max_listed) do
     ChatMember
     |> where([m], m.chat_id == ^to_string(chat_id) and m.status == "active")
     |> order_by([m], asc: m.first_name)
-    |> limit(^limit)
+    |> apply_limit(limit)
     |> Repo.all()
   end
+
+  defp apply_limit(query, :all), do: query
+  defp apply_limit(query, count), do: limit(query, ^count)
 
   @doc "Primeiro nome do membro neste chat, ou nil se ainda desconhecido"
   def get_first_name(chat_id, user_id) do
@@ -93,9 +102,12 @@ defmodule GptTalkerbot.ChatMembers do
   end
 
   # Frequente = está entre os @top_talkers mais falantes do chat, tendo
-  # falado pelo menos @min_messages vezes — quem não interage não entra
+  # falado pelo menos @min_messages vezes e aparecido nos últimos
+  # @window_days dias. O contador é vitalício, então sem a janela quem
+  # falou muito e sumiu continuaria "frequente" para sempre.
   @min_messages 5
   @top_talkers 8
+  @window_days 30
 
   @doc """
   Os membros ativos mais falantes do chat. Todos entram com peso igual —
@@ -103,32 +115,87 @@ defmodule GptTalkerbot.ChatMembers do
   páreo, não quantas vezes aparece.
   """
   def list_frequent_members(chat_id, limit \\ @top_talkers) do
+    cutoff = DateTime.add(DateTime.utc_now(), -@window_days, :day)
+
     ChatMember
     |> where([m], m.chat_id == ^to_string(chat_id) and m.status == "active")
     |> where([m], m.message_count >= @min_messages)
+    |> where([m], m.last_message_at >= ^cutoff)
     |> order_by([m], desc: m.message_count, asc: m.first_name)
     |> limit(^limit)
     |> Repo.all()
   end
 
   @doc """
+  Membros ordenados por participação: os frequentes primeiro e, se sobrar
+  vaga até `limit`, os mais falantes entre os demais.
+
+  É o que vai para prompt e para enquete. A lista alfabética não serve aqui
+  porque o corte cai em quem tem nome no começo do alfabeto — critério sem
+  nenhuma relação com participar do grupo.
+  """
+  def list_ranked_members(chat_id, limit \\ @max_listed) do
+    frequent = list_frequent_members(chat_id, limit)
+
+    frequent ++ list_others(chat_id, frequent, limit - length(frequent))
+  end
+
+  defp list_others(_chat_id, _frequent, remaining) when remaining <= 0, do: []
+
+  defp list_others(chat_id, frequent, remaining) do
+    excluded = Enum.map(frequent, & &1.id)
+
+    ChatMember
+    |> where([m], m.chat_id == ^to_string(chat_id) and m.status == "active")
+    |> where([m], m.id not in ^excluded)
+    |> order_by([m],
+      desc: m.message_count,
+      desc_nulls_last: m.last_message_at,
+      asc: m.first_name
+    )
+    |> limit(^remaining)
+    |> Repo.all()
+  end
+
+  @doc """
   Bloco pronto para system prompt: quem está no chat + como mencionar
   com notificação. Retorna "" se o chat ainda não tem membros conhecidos.
+
+  Separa quem participa de quem só consta: sem essa divisão o modelo
+  sorteia e cutuca gente que nunca abriu a boca no grupo — inclusive os
+  admins que o `seed_admins/1` cadastrou sem nunca terem falado.
   """
   def prompt_section(chat_id) do
-    case list_members(chat_id) do
-      [] ->
-        ""
+    frequent = list_frequent_members(chat_id, @max_listed)
+    others = list_others(chat_id, frequent, @max_listed - length(frequent))
 
-      members ->
-        lista = Enum.map_join(members, ", ", &"#{&1.first_name} (id #{&1.user_id})")
-
-        "\n\nPessoas deste chat: " <>
-          lista <>
-          "\nPara mencionar alguém notificando a pessoa, escreva exatamente " <>
-          ~s(<a href="tg://user?id=ID">Nome</a> com o id da lista. Use com moderação — ) <>
-          "só quando a piada pedir a pessoa específica."
+    case {frequent, others} do
+      {[], []} -> ""
+      {[], others} -> section(others, [])
+      {frequent, others} -> section(frequent, others)
     end
+  end
+
+  defp section(pickable, reference) do
+    "\n\nPessoas deste chat que participam das conversas — escolha, sorteie ou " <>
+      "mencione SOMENTE alguém desta lista: " <>
+      format_members(pickable) <>
+      reference_line(reference) <>
+      "\nPara mencionar alguém notificando a pessoa, escreva exatamente " <>
+      ~s(<a href="tg://user?id=ID">Nome</a> com o id da lista. Use com moderação — ) <>
+      "só quando a piada pedir a pessoa específica."
+  end
+
+  defp reference_line([]), do: ""
+
+  defp reference_line(members) do
+    "\nTambém estão no grupo, mas quase não falam — só para você reconhecer o " <>
+      "nome se alguém citar, nunca para sortear ou mencionar por conta própria: " <>
+      format_members(members)
+  end
+
+  defp format_members(members) do
+    Enum.map_join(members, ", ", &"#{&1.first_name} (id #{&1.user_id})")
   end
 
   @doc "Semeia o registro com os administradores do chat (única listagem da API)"
