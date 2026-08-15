@@ -89,9 +89,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     )
   end
 
-  # Citação longa no meio da mensagem só dilui o que importa
-  @max_quote_length 200
-
   # A mensagem citada entra embutida na fala atual em vez de virar uma
   # mensagem avulsa no histórico — avulsa ela duplica falas que já estão
   # lá e o modelo lê como se a pessoa tivesse insistido no assunto
@@ -103,9 +100,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
        }) do
     # Se a pessoa citou um trecho específico (TextQuote), ele vale mais que
     # a mensagem inteira
-    quoted =
-      (quote_text || reply.caption || reply.text || "")
-      |> String.slice(0, @max_quote_length)
+    quoted = quote_text || reply.caption || reply.text || ""
 
     content =
       "#{user_label(name, user_id)} (respondendo a #{user_label(reply_name, reply_user_id)}: \"#{quoted}\"): #{text}"

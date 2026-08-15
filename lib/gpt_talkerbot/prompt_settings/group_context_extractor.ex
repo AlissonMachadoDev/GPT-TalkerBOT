@@ -28,7 +28,7 @@ defmodule GptTalkerbot.PromptSettings.GroupContextExtractor do
       %{role: "user", content: user_content}
     ]
 
-    case LLM.complete_text(ai_messages, temperature: 0.3, max_tokens: 400, reasoning_effort: "none") do
+    case LLM.complete_text(ai_messages, temperature: 0.3, max_tokens: 400) do
       {:ok, new_context} ->
         GroupContext.update_context(chat_id, String.trim(new_context))
         Logger.info("GroupContextExtractor: updated context for chat #{chat_id}")
