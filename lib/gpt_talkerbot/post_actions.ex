@@ -26,6 +26,12 @@ defmodule GptTalkerbot.PostActions do
   # As palavras viram gender/age (ElevenLabs) ou tag (Fish) — ver VoiceSearch.
   @voice_style_directive ~r/\[\[\s*ratobo:\s*voice:\s*estilo:\s*([^\]]{1,60}?)\s*\]\]/iu
 
+  # Mesma sintaxe dos dois de cima, mas capturando o modo (nome|estilo) junto
+  # — usado só pra separar falas de diálogo multi-voz (ver voice_turns/1),
+  # não pra sinalizar a ação de override de uma fala só (isso já é feito
+  # pelos dois directives acima, independentes)
+  @voice_turn_directive ~r/\[\[\s*ratobo:\s*voice:\s*(nome|estilo):\s*([^\]]{1,60}?)\s*\]\]/iu
+
   @any_directive ~r/\[\[\s*ratobo:[^\]]{0,60}\]\]/iu
 
   # Audio tags do eleven_v3 ([sarcastic], [laughs harder]...): só letras e
@@ -68,7 +74,17 @@ defmodule GptTalkerbot.PostActions do
                  Enum.join(@style_words, ", ") <>
                  ". Nunca invente palavra fora dessa lista — fora dela a busca não acha nada.\n" <>
                  "Use qualquer um dos dois raramente, só quando a voz padrão destoaria " <>
-                 "claramente do que foi pedido."
+                 "claramente do que foi pedido." <>
+                 "\n\nPra DIÁLOGO com mais de uma voz no mesmo áudio (cena com dois " <>
+                 "personagens, por exemplo), repita um marcador [[ratobo:voice:nome:...]] ou " <>
+                 "[[ratobo:voice:estilo:...]] no início de CADA fala, alternando conforme quem " <>
+                 "fala — inclusive a primeira fala precisa vir com marcador, senão ela não entra " <>
+                 "no áudio. Exemplo:\n" <>
+                 "[[ratobo:voice:nome:Fulano]] Fala do Fulano aqui.\n" <>
+                 "[[ratobo:voice:estilo:feminina agressiva]] Resposta da segunda voz aqui.\n" <>
+                 "Isso só produz vozes de verdade alternadas quando o provedor ativo suporta " <>
+                 "(hoje: ElevenLabs); nos demais o áudio sai inteiro numa voz só, a da primeira " <>
+                 "fala marcada — não é erro, é a voz padrão do provedor cobrindo o resto."
 
   def instruction, do: @instruction
 
@@ -111,6 +127,38 @@ defmodule GptTalkerbot.PostActions do
     |> String.split(~r/[,\s]+/, trim: true)
     |> Enum.filter(&(&1 in @style_words))
   end
+
+  @doc """
+  Separa `text` em falas de diálogo multi-voz: uma entrada por marcador
+  [[ratobo:voice:nome/estilo:...]] encontrado, com o texto que vem depois dele
+  (até o próximo marcador ou o fim). Texto antes do primeiro marcador é
+  descartado — é o que sustenta a regra da instrução de marcar toda fala,
+  inclusive a primeira.
+
+  `[]` quando não há marcador nenhum (não é diálogo) ou só um (é o caso já
+  coberto por extract/1 — troca de voz de uma fala só, não diálogo).
+  """
+  def voice_turns(nil), do: []
+
+  def voice_turns(text) do
+    case Regex.scan(@voice_turn_directive, text) do
+      [] ->
+        []
+
+      matches ->
+        [_preamble | segments] = Regex.split(@voice_turn_directive, text)
+
+        matches
+        |> Enum.zip(segments)
+        |> Enum.map(fn {[_full, mode, value], segment} ->
+          %{action: turn_action(mode, value), text: String.trim(segment)}
+        end)
+        |> Enum.reject(&(&1.text == ""))
+    end
+  end
+
+  defp turn_action("nome", value), do: {:voice_name, String.trim(value)}
+  defp turn_action("estilo", value), do: {:voice_style, parse_style_words(value)}
 
   @doc "Remove qualquer diretiva do texto, inclusive as desconhecidas"
   def strip(nil), do: ""

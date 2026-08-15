@@ -42,10 +42,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       |> Kernel.<>(format_instruction_for(message))
 
     with {:ok, response} <- process_ai_message(user_id, chat_id, ai_messages, system_prompt) do
-      {reply, actions} = extract_content(response)
+      raw_content = get_in(response, ["choices", Access.at(0), "message", "content"])
+      {reply, actions} = extract_content(raw_content)
       reply = ensure_text(reply, actions, ai_messages, user_id, chat_id)
 
-      case send_reply(reply, actions, message) do
+      case send_reply(reply, actions, raw_content, message) do
         :ok ->
           Memory.save_exchange(chat_id, user_id, current_msg.content, reply)
           GroupMessageCache.add_bot_message(chat_id, reply)
@@ -152,12 +153,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-  defp extract_content(response) do
-    {clean, actions} =
-      response
-      |> get_in(["choices", Access.at(0), "message", "content"])
-      |> PostActions.extract()
-
+  defp extract_content(raw_content) do
+    {clean, actions} = PostActions.extract(raw_content)
     {HtmlSanitizer.truncate(clean), actions}
   end
 
@@ -188,9 +185,10 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   defp maybe_send_thinking_draft(_message), do: :ok
 
-  defp send_reply(reply, actions, message) do
+  defp send_reply(reply, actions, raw_content, message) do
     result =
       cond do
+        turns = dialogue_turns(raw_content) -> send_with_dialogue(reply, turns, message)
         :audio in actions -> send_with_audio(reply, actions, message)
         :gif in actions -> send_with_gif(reply, message)
         message.chat_type == "private" -> send_rich_reply(reply, message)
@@ -198,6 +196,18 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       end
 
     delivered(result)
+  end
+
+  # Diálogo multi-voz só existe via API na ElevenLabs (text-to-dialogue); com
+  # 0 ou 1 marcador de voz não é diálogo — é o caso de fala única já coberto
+  # por :voice_name/:voice_style em `actions` (ver voice_override/1)
+  defp dialogue_turns(raw_content) do
+    if RuntimeEnvs.get_tts_provider() == :elevenlabs do
+      case PostActions.voice_turns(raw_content) do
+        turns when length(turns) >= 2 -> turns
+        _ -> nil
+      end
+    end
   end
 
   # Normaliza o resultado do envio: só conta como entregue o que o
@@ -291,6 +301,44 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       end
     else
       _ -> send_message(PostActions.strip_audio_tags(reply), message)
+    end
+  end
+
+  # Duas ou mais falas marcadas: cada uma resolve sua própria voz (cai na
+  # default da ElevenLabs se a busca não achar nada — nunca aborta o
+  # diálogo por causa de uma fala só). Falha na chamada de diálogo em si
+  # cai pro fallback de sempre: texto normal, nunca silêncio.
+  defp send_with_dialogue(reply, turns, %{chat_id: chat_id, message_id: message_id} = message) do
+    inputs =
+      Enum.map(turns, fn %{action: action, text: text} ->
+        %{"text" => plain_text(text), "voice_id" => resolve_voice(action)}
+      end)
+
+    case TTS.synthesize_dialogue(inputs) do
+      {:ok, audio} ->
+        caption = reply |> PostActions.strip_audio_tags() |> String.slice(0, @caption_max)
+
+        %{
+          chat_id: to_string(chat_id),
+          voice: audio,
+          caption: caption,
+          reply_to_message_id: message_id
+        }
+        |> Telegram.send_voice()
+        |> case do
+          {:ok, %{status: 200}} -> :ok
+          _ -> send_message(PostActions.strip_audio_tags(reply), message)
+        end
+
+      {:error, _} ->
+        send_message(PostActions.strip_audio_tags(reply), message)
+    end
+  end
+
+  defp resolve_voice(action) do
+    case VoiceSearch.find_voice(action) do
+      {:ok, voice_id} -> voice_id
+      :error -> RuntimeEnvs.get_elevenlabs_voice("default")
     end
   end
 

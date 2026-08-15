@@ -73,6 +73,49 @@ defmodule GptTalkerbot.PostActionsTest do
     end
   end
 
+  describe "voice_turns/1" do
+    test "sem marcador nenhum não é diálogo" do
+      assert PostActions.voice_turns("kkkk clássico do Beto") == []
+    end
+
+    test "um marcador só não é diálogo (é troca de voz de fala única)" do
+      assert PostActions.voice_turns("[[ratobo:voice:nome:Fulano]] oi") == [
+               %{action: {:voice_name, "Fulano"}, text: "oi"}
+             ]
+    end
+
+    test "dois ou mais marcadores viram uma fala por marcador, em ordem" do
+      text =
+        "[[ratobo:voice:nome:Fulano]] fala do Fulano.\n" <>
+          "[[ratobo:voice:estilo:feminina agressiva]] fala da segunda voz."
+
+      assert PostActions.voice_turns(text) == [
+               %{action: {:voice_name, "Fulano"}, text: "fala do Fulano."},
+               %{action: {:voice_style, ["feminina", "agressiva"]}, text: "fala da segunda voz."}
+             ]
+    end
+
+    test "texto antes do primeiro marcador é descartado" do
+      text = "isso aqui some\n[[ratobo:voice:nome:Fulano]] isso fica"
+
+      assert PostActions.voice_turns(text) == [
+               %{action: {:voice_name, "Fulano"}, text: "isso fica"}
+             ]
+    end
+
+    test "marcador sem texto depois (fala vazia) não vira turno" do
+      text = "[[ratobo:voice:nome:Fulano]] fala de verdade\n[[ratobo:voice:nome:Ciclano]]"
+
+      assert PostActions.voice_turns(text) == [
+               %{action: {:voice_name, "Fulano"}, text: "fala de verdade"}
+             ]
+    end
+
+    test "nil vira lista vazia" do
+      assert PostActions.voice_turns(nil) == []
+    end
+  end
+
   describe "strip/1" do
     test "diretiva desconhecida some do texto sem executar nada" do
       assert PostActions.strip("quem é o melhor?\n[[ratobo:enquete]]") == "quem é o melhor?"

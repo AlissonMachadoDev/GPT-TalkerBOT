@@ -110,6 +110,30 @@ defmodule GptTalkerbotWeb.Services.TTS do
     ])
   end
 
+  @doc """
+  Sintetiza um diálogo com várias vozes num áudio só (text-to-dialogue da
+  ElevenLabs — os outros providers não têm equivalente por API, só estúdio
+  no browser). `inputs` é uma lista de `%{"text" => ..., "voice_id" => ...}`,
+  uma entrada por fala, até 10 vozes distintas.
+
+  Sem fallback automático pro OpenAI: diálogo multi-voz não existe fora da
+  ElevenLabs, então um erro aqui significa "sem diálogo mesmo" — quem chama
+  decide se cai pra síntese de voz única ou pra texto.
+  """
+  def synthesize_dialogue(inputs) when is_list(inputs) and inputs != [] do
+    key = RuntimeEnvs.get_elevenlabs_api_key()
+
+    if key == "" do
+      {:error, :no_api_key}
+    else
+      client = elevenlabs_client(key)
+      url = "/text-to-dialogue?output_format=#{@elevenlabs_output_format}"
+      body = %{"inputs" => inputs, "model_id" => RuntimeEnvs.get_elevenlabs_model()}
+
+      audio_or_error(Tesla.post(client, url, body))
+    end
+  end
+
   # --- Fish Audio ---
 
   defp fish(text, voice_override) do
