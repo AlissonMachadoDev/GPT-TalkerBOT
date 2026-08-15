@@ -40,21 +40,36 @@ defmodule GptTalkerbot.PostActionsTest do
       assert Enum.sort(actions) == [:audio, :gif]
     end
 
-    test "diretiva de voz vira ação de áudio com a descrição, sem precisar de [[ratobo:audio]]" do
-      assert PostActions.extract("ok\n[[ratobo:voice: voz grave e séria]]") ==
-               {"ok", [:audio, {:voice, "voz grave e séria"}]}
+    test "diretiva de voz por nome vira ação de áudio, sem precisar de [[ratobo:audio]]" do
+      assert PostActions.extract("ok\n[[ratobo:voice:nome: Michel Teló]]") ==
+               {"ok", [:audio, {:voice_name, "Michel Teló"}]}
     end
 
-    test "diretiva de voz combinada com áudio não duplica a ação" do
+    test "diretiva de voz por nome combinada com áudio não duplica a ação" do
       assert {"ok", actions} =
-               PostActions.extract("ok\n[[ratobo:audio]]\n[[ratobo:voice: sussurrando]]")
+               PostActions.extract("ok\n[[ratobo:audio]]\n[[ratobo:voice:nome: Michel Teló]]")
 
-      assert Enum.sort(actions) == [:audio, {:voice, "sussurrando"}]
+      assert Enum.sort(actions) == [:audio, {:voice_name, "Michel Teló"}]
     end
 
-    test "diretiva de voz aceita variações de caixa e espaço" do
-      assert {_, [:audio, {:voice, "voz de robô"}]} =
-               PostActions.extract("bip\n[[ Ratobo: VOICE:   voz de robô  ]]")
+    test "diretiva de voz por nome aceita variações de caixa e espaço" do
+      assert {_, [:audio, {:voice_name, "voz de robô"}]} =
+               PostActions.extract("bip\n[[ Ratobo: VOICE:NOME:   voz de robô  ]]")
+    end
+
+    test "diretiva de voz por estilo filtra só as palavras do vocabulário fixo" do
+      assert PostActions.extract("ok\n[[ratobo:voice:estilo: feminina, jovem]]") ==
+               {"ok", [:audio, {:voice_style, ["feminina", "jovem"]}]}
+    end
+
+    test "diretiva de estilo descarta palavra fora do vocabulário sem quebrar as demais" do
+      assert PostActions.extract("ok\n[[ratobo:voice:estilo: feminina safadenta jovem]]") ==
+               {"ok", [:audio, {:voice_style, ["feminina", "jovem"]}]}
+    end
+
+    test "diretiva de estilo sem nenhuma palavra reconhecida vira lista vazia" do
+      assert PostActions.extract("ok\n[[ratobo:voice:estilo: inventada]]") ==
+               {"ok", [:audio, {:voice_style, []}]}
     end
   end
 

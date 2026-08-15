@@ -294,19 +294,22 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-  # [[ratobo:voice:descrição]] carrega a descrição em {:voice, description};
-  # busca falha (provider sem biblioteca, sem api_key, sem resultado) cai pra
-  # nil e o TTS usa a voz default configurada — nunca derruba a síntese
+  # [[ratobo:voice:nome:...]] ou [[ratobo:voice:estilo:...]] viram
+  # {:voice_name, _} / {:voice_style, _} em actions; busca falha (provider sem
+  # biblioteca, sem api_key, sem resultado) cai pra nil e o TTS usa a voz
+  # default configurada — nunca derruba a síntese
   defp voice_override(actions) do
-    case List.keyfind(actions, :voice, 0) do
-      {:voice, description} ->
-        case VoiceSearch.find_voice(description) do
+    action = List.keyfind(actions, :voice_name, 0) || List.keyfind(actions, :voice_style, 0)
+
+    case action do
+      nil ->
+        nil
+
+      voice_action ->
+        case VoiceSearch.find_voice(voice_action) do
           {:ok, voice_id} -> voice_id
           :error -> nil
         end
-
-      nil ->
-        nil
     end
   end
 

@@ -14,10 +14,18 @@ defmodule GptTalkerbot.PostActions do
 
   @gif_directive ~r/\[\[\s*ratobo:\s*gif\s*\]\]/iu
   @audio_directive ~r/\[\[\s*ratobo:\s*audio\s*\]\]/iu
-  # Descrição livre da voz desejada (ex: "voz feminina jovem e debochada"), que
-  # o TTS usa pra buscar a voz mais parecida na biblioteca do provedor em vez
-  # da voz default fixa. Implica áudio — não precisa combinar com [[ratobo:audio]]
-  @voice_directive ~r/\[\[\s*ratobo:\s*voice:\s*([^\]]{1,60}?)\s*\]\]/iu
+
+  # Busca por nome/personagem: bate contra o título do modelo cadastrado na
+  # biblioteca do provedor (Fish `title`, ElevenLabs `search` por nome). Só
+  # acha se existir um modelo com esse nome — serve pra pessoa/personagem
+  # conhecido, não pra descrição de humor (isso é o próximo marcador).
+  @voice_name_directive ~r/\[\[\s*ratobo:\s*voice:\s*nome:\s*([^\]]{1,60}?)\s*\]\]/iu
+
+  # Busca por estilo: vocabulário FIXO (ver @instruction), não texto livre —
+  # texto livre não bate com título de modelo nem com tag/label cadastrada.
+  # As palavras viram gender/age (ElevenLabs) ou tag (Fish) — ver VoiceSearch.
+  @voice_style_directive ~r/\[\[\s*ratobo:\s*voice:\s*estilo:\s*([^\]]{1,60}?)\s*\]\]/iu
+
   @any_directive ~r/\[\[\s*ratobo:[^\]]{0,60}\]\]/iu
 
   # Audio tags do eleven_v3 ([sarcastic], [laughs harder]...): só letras e
@@ -26,6 +34,13 @@ defmodule GptTalkerbot.PostActions do
   # do fallback de texto. Exigir letras preserva colchetes de usuário como
   # [2x1] ou [1] (têm dígito) e a diretiva [[ratobo:...]] (colchete duplo).
   @audio_tag ~r/\[[\p{L} ]{2,30}\]/u
+
+  # Vocabulário fixo do marcador de estilo — o modelo só pode combinar
+  # palavras daqui. Fora dela, VoiceSearch ignora a palavra (não interrompe a
+  # busca, mas se nenhuma bater a busca fica vazia e cai na voz default).
+  @style_words ~w(feminina masculina jovem adulta idosa grave doce agressiva debochada)
+
+  def style_words, do: @style_words
 
   @instruction "\n\nPara anexar um GIF aleatório da sua coleção à resposta, termine com o " <>
                  "marcador [[ratobo:gif]] em uma linha própria. Use raramente, só quando um GIF " <>
@@ -41,11 +56,18 @@ defmodule GptTalkerbot.PostActions do
                  "[excited], [mischievously] — pra variar o tom conforme a situação. Use com " <>
                  "parcimônia, no máximo uma ou duas por fala, e só quando somam à interpretação." <>
                  "\n\nSe a ocasião pedir uma voz diferente da sua padrão (personagem, emoção " <>
-                 "marcante, imitação pedida no chat...), troque o marcador de áudio por " <>
-                 "[[ratobo:voice:descrição breve da voz]] em vez de [[ratobo:audio]] — não use " <>
-                 "os dois juntos. A descrição é livre e curta (ex: \"voz feminina jovem e " <>
-                 "debochada\", \"voz grave e séria de narrador\"): o sistema busca a voz mais " <>
-                 "parecida antes de sintetizar. Use raramente, só quando a voz padrão destoaria " <>
+                 "marcante, imitação pedida no chat...), troque o marcador de áudio por UM dos " <>
+                 "dois abaixo — nunca os dois juntos, nunca junto com [[ratobo:audio]]:\n" <>
+                 "— Pediram a voz de uma PESSOA ou PERSONAGEM específico e conhecido (\"voz do " <>
+                 "fulano\", \"voz de tal personagem\")? [[ratobo:voice:nome:nome da pessoa ou " <>
+                 "personagem]] — busca pelo nome exato; só acha se existir alguém cadastrado " <>
+                 "com esse nome, senão volta pra voz padrão sem avisar.\n" <>
+                 "— Pediram um ESTILO sem nome específico (\"voz de mulher\", \"voz grave\", " <>
+                 "\"voz de velho\")? [[ratobo:voice:estilo:palavra1 palavra2]] usando SÓ " <>
+                 "palavras deste vocabulário fixo, quantas fizerem sentido: " <>
+                 Enum.join(@style_words, ", ") <>
+                 ". Nunca invente palavra fora dessa lista — fora dela a busca não acha nada.\n" <>
+                 "Use qualquer um dos dois raramente, só quando a voz padrão destoaria " <>
                  "claramente do que foi pedido."
 
   def instruction, do: @instruction
@@ -63,13 +85,31 @@ defmodule GptTalkerbot.PostActions do
     {strip(text), actions}
   end
 
-  # [[ratobo:voice:...]] implica áudio: some das duas listas em vez de
-  # exigir que o modelo escreva [[ratobo:audio]] junto
+  # [[ratobo:voice:...]] (qualquer um dos dois modos) implica áudio: some das
+  # duas listas em vez de exigir que o modelo escreva [[ratobo:audio]] junto
   defp add_voice_action(actions, text) do
-    case Regex.run(@voice_directive, text) do
-      [_, description] -> Enum.uniq([:audio, {:voice, String.trim(description)} | actions])
-      nil -> actions
+    cond do
+      match = Regex.run(@voice_name_directive, text) ->
+        [_, name] = match
+        Enum.uniq([:audio, {:voice_name, String.trim(name)} | actions])
+
+      match = Regex.run(@voice_style_directive, text) ->
+        [_, style] = match
+        Enum.uniq([:audio, {:voice_style, parse_style_words(style)} | actions])
+
+      true ->
+        actions
     end
+  end
+
+  # Só as palavras do vocabulário fixo sobrevivem — o resto é ruído que o
+  # modelo eventualmente cola junto (artigo, pontuação) e não deve virar
+  # filtro de busca
+  defp parse_style_words(text) do
+    text
+    |> String.downcase()
+    |> String.split(~r/[,\s]+/, trim: true)
+    |> Enum.filter(&(&1 in @style_words))
   end
 
   @doc "Remove qualquer diretiva do texto, inclusive as desconhecidas"
