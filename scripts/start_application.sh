@@ -22,6 +22,11 @@ if [ -z "$ELEVENLABS_API_KEY" ]; then
   echo "WARNING: /gpt_talkerbot/prod/elevenlabs_api_key not found - TTS will fall back to OpenAI"
 fi
 
+FISH_API_KEY=$(aws ssm get-parameter --name "/gpt_talkerbot/prod/fish_api_key" --with-decryption --query Parameter.Value --output text 2>/dev/null || echo "")
+if [ -z "$FISH_API_KEY" ]; then
+  echo "WARNING: /gpt_talkerbot/prod/fish_api_key not found - TTS will fall back to OpenAI"
+fi
+
 # --- Promove a release prebuildada do staging para um diretório versionado ---
 # A versão no ar (current/) segue intocada até a troca do symlink lá embaixo.
 RELEASE_ID="$(date +%Y%m%d%H%M%S)"
@@ -65,6 +70,7 @@ Environment="SECRET_KEY_BASE=${KEY_BASE}"
 Environment="OPENAI_API_KEY=${OPENAI_API_KEY}"
 Environment="GROK_API_KEY=${GROK_API_KEY}"
 Environment="ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}"
+Environment="FISH_API_KEY=${FISH_API_KEY}"
 Environment="TELEGRAM_API_KEY=${TELEGRAM_API_KEY}"
 Environment="SERVER_HOST=${SERVER_HOST}"
 Environment="TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}"

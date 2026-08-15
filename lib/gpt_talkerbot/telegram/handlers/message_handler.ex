@@ -3,7 +3,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   alias GptTalkerbot.Telegram.Message
   # SpiceChecker desativado no fluxo de chat (ver process_ai_message)
-  alias GptTalkerbotWeb.Services.{Telegram, TTS}
+  alias GptTalkerbotWeb.Services.{Telegram, TTS, VoiceSearch}
   alias GptTalkerbot.{GifMemory, LLM, Memory, PostActions, RuntimeEnvs}
   alias GptTalkerbot.Memory.FactExtractor
   alias GptTalkerbot.PromptSettings.{Personality, BotDefinitions, ContextTools}
@@ -191,7 +191,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, message) do
     result =
       cond do
-        :audio in actions -> send_with_audio(reply, message)
+        :audio in actions -> send_with_audio(reply, actions, message)
         :gif in actions -> send_with_gif(reply, message)
         message.chat_type == "private" -> send_rich_reply(reply, message)
         true -> send_message(reply, message)
@@ -271,11 +271,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # O modelo sinalizou [[ratobo:audio]]: a resposta vira nota de voz. O texto é
   # a fala (limpo de HTML pro TTS) e vai junto como legenda. Qualquer falha
   # (TTS fora, voz recusada) cai pro texto normal — o rato nunca fica mudo.
-  defp send_with_audio(reply, %{chat_id: chat_id, message_id: message_id} = message) do
+  defp send_with_audio(reply, actions, %{chat_id: chat_id, message_id: message_id} = message) do
     # O texto vai com as audio tags do v3 pro sintetizador; a legenda e o
     # fallback de texto saem sem elas, pra ninguém ler "[sarcastic]" escrito.
     with spoken when spoken != "" <- plain_text(reply),
-         {:ok, audio} <- TTS.synthesize(spoken) do
+         {:ok, audio} <- TTS.synthesize(spoken, voice_override(actions)) do
       caption = spoken |> PostActions.strip_audio_tags() |> String.slice(0, @caption_max)
 
       %{
@@ -291,6 +291,22 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       end
     else
       _ -> send_message(PostActions.strip_audio_tags(reply), message)
+    end
+  end
+
+  # [[ratobo:voice:descrição]] carrega a descrição em {:voice, description};
+  # busca falha (provider sem biblioteca, sem api_key, sem resultado) cai pra
+  # nil e o TTS usa a voz default configurada — nunca derruba a síntese
+  defp voice_override(actions) do
+    case List.keyfind(actions, :voice, 0) do
+      {:voice, description} ->
+        case VoiceSearch.find_voice(description) do
+          {:ok, voice_id} -> voice_id
+          :error -> nil
+        end
+
+      nil ->
+        nil
     end
   end
 

@@ -62,8 +62,8 @@ Legado: `/register`, `/register_group`.
 ## Configuração
 
 Env vars (prod): `DATABASE_URL`, `SECRET_KEY_BASE`, `OPENAI_API_KEY`,
-`GROK_API_KEY`, `ELEVENLABS_API_KEY`, `TELEGRAM_API_KEY`, `SERVER_HOST`,
-`TELEGRAM_WEBHOOK_SECRET`, `RABBITMQ_HOST`, `RABBITMQ_USERNAME`,
+`GROK_API_KEY`, `ELEVENLABS_API_KEY`, `FISH_API_KEY`, `TELEGRAM_API_KEY`,
+`SERVER_HOST`, `TELEGRAM_WEBHOOK_SECRET`, `RABBITMQ_HOST`, `RABBITMQ_USERNAME`,
 `RABBITMQ_PASSWORD`, credenciais AWS.
 
 Parâmetros no SSM (path `/gpt_talkerbot/prod/`), atualizáveis sem deploy via
@@ -74,7 +74,7 @@ Parâmetros no SSM (path `/gpt_talkerbot/prod/`), atualizáveis sem deploy via
 `mood_duration`, `interject_probability`, `interject_cooldown_minutes`,
 `reaction_probability`, `gif_probability`, `daily_summary_hour` (fora de 0–23
 desativa), `utc_offset`, `tts_provider`, `elevenlabs_voices`,
-`elevenlabs_model` (ver [Áudio (TTS)](#áudio-tts)).
+`elevenlabs_model`, `fish_voices`, `fish_model` (ver [Áudio (TTS)](#áudio-tts)).
 
 Acesso é *fail closed*: com `allowed_users` e `allowed_groups` vazios o bot
 não responde a ninguém.
@@ -89,9 +89,9 @@ texto é gerado por IA in-character e então sintetizado) ou quando o modelo
 termina uma resposta com o marcador `[[ratobo:audio]]` (acionado por pedidos
 naturais de áudio no chat). A síntese fica em `Services.TTS`.
 
-**Provider** — `tts_provider` no SSM: `openai` (padrão) ou `elevenlabs`. Sem
-`ELEVENLABS_API_KEY` ou sem a voz `default` configurada, o TTS cai pro OpenAI
-automaticamente.
+**Provider** — `tts_provider` no SSM: `openai` (padrão), `elevenlabs` ou `fish`.
+Sem a respectiva `*_API_KEY` ou sem a voz `default` configurada, o TTS cai pro
+OpenAI automaticamente.
 
 **Adicionar uma voz (ElevenLabs)** — as vozes ficam no parâmetro SSM
 `elevenlabs_voices`, no formato `nome:voice_id;nome:voice_id` (mesmo formato do
@@ -102,10 +102,15 @@ automaticamente.
 default:21m00Tcm4TlvDq8ikWAM;male_1:pNInz6obpgDQGcFmaJgB;narrador:...
 ```
 
+**Adicionar uma voz (Fish Audio)** — mesmo esquema no parâmetro SSM
+`fish_voices`: `nome:reference_id;nome:reference_id`. O `reference_id` vem da
+Voice Library da Fish Audio. `fish_model` seleciona o modelo (`s2.1-pro` por
+padrão, o recomendado pela Fish para produção).
+
 Hoje **só a `default` é usada** — toda nota de voz sai com ela. A seleção de voz
 por contexto/diálogo ainda não é dirigida pelo prompt; existe apenas o gancho de
-código `RuntimeEnvs.get_elevenlabs_voice("nome")`, a ser ligado quando os
-diálogos multi-voz forem implementados.
+código `RuntimeEnvs.get_elevenlabs_voice/1` / `RuntimeEnvs.get_fish_voice/1`, a
+ser ligado quando os diálogos multi-voz forem implementados.
 
 ## Desenvolvimento
 

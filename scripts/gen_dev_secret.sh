@@ -24,6 +24,8 @@ DEFAULT_PROMPT=$(get_param "/gpt_talkerbot/prod/default_prompt")
 TTS_PROVIDER=$(get_param_optional "/gpt_talkerbot/prod/tts_provider")
 ELEVENLABS_API_KEY=$(get_param_optional "/gpt_talkerbot/prod/elevenlabs_api_key")
 ELEVENLABS_VOICES=$(get_param_optional "/gpt_talkerbot/prod/elevenlabs_voices")
+FISH_API_KEY=$(get_param_optional "/gpt_talkerbot/prod/fish_api_key")
+FISH_VOICES=$(get_param_optional "/gpt_talkerbot/prod/fish_voices")
 
 # Converte "id1,id2,id3" para [id1, id2, id3]
 ALLOWED_GROUPS_ELIXIR="[$(echo "$ALLOWED_GROUPS" | sed 's/,/, /g')]"
@@ -45,6 +47,8 @@ config :gpt_talkerbot, :default_prompt, "$DEFAULT_PROMPT_ESCAPED"
 config :gpt_talkerbot, :tts_provider, "${TTS_PROVIDER:-openai}"
 config :gpt_talkerbot, :elevenlabs_api_key, "$ELEVENLABS_API_KEY"
 config :gpt_talkerbot, :elevenlabs_voices, "$ELEVENLABS_VOICES"
+config :gpt_talkerbot, :fish_api_key, "$FISH_API_KEY"
+config :gpt_talkerbot, :fish_voices, "$FISH_VOICES"
 ELIXIR
 
 echo "config/dev.secret.exs criado com sucesso!"

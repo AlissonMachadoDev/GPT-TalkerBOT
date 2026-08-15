@@ -39,6 +39,23 @@ defmodule GptTalkerbot.PostActionsTest do
       assert {"toma", actions} = PostActions.extract("toma\n[[ratobo:gif]]\n[[ratobo:audio]]")
       assert Enum.sort(actions) == [:audio, :gif]
     end
+
+    test "diretiva de voz vira ação de áudio com a descrição, sem precisar de [[ratobo:audio]]" do
+      assert PostActions.extract("ok\n[[ratobo:voice: voz grave e séria]]") ==
+               {"ok", [:audio, {:voice, "voz grave e séria"}]}
+    end
+
+    test "diretiva de voz combinada com áudio não duplica a ação" do
+      assert {"ok", actions} =
+               PostActions.extract("ok\n[[ratobo:audio]]\n[[ratobo:voice: sussurrando]]")
+
+      assert Enum.sort(actions) == [:audio, {:voice, "sussurrando"}]
+    end
+
+    test "diretiva de voz aceita variações de caixa e espaço" do
+      assert {_, [:audio, {:voice, "voz de robô"}]} =
+               PostActions.extract("bip\n[[ Ratobo: VOICE:   voz de robô  ]]")
+    end
   end
 
   describe "strip/1" do

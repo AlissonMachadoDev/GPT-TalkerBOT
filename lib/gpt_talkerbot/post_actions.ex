@@ -14,6 +14,10 @@ defmodule GptTalkerbot.PostActions do
 
   @gif_directive ~r/\[\[\s*ratobo:\s*gif\s*\]\]/iu
   @audio_directive ~r/\[\[\s*ratobo:\s*audio\s*\]\]/iu
+  # Descrição livre da voz desejada (ex: "voz feminina jovem e debochada"), que
+  # o TTS usa pra buscar a voz mais parecida na biblioteca do provedor em vez
+  # da voz default fixa. Implica áudio — não precisa combinar com [[ratobo:audio]]
+  @voice_directive ~r/\[\[\s*ratobo:\s*voice:\s*([^\]]{1,60}?)\s*\]\]/iu
   @any_directive ~r/\[\[\s*ratobo:[^\]]{0,60}\]\]/iu
 
   # Audio tags do eleven_v3 ([sarcastic], [laughs harder]...): só letras e
@@ -35,7 +39,14 @@ defmodule GptTalkerbot.PostActions do
                  "escreva a fala de verdade. Você PODE dirigir a entrega com audio tags entre " <>
                  "colchetes no meio da fala — [sarcastic], [laughs], [whispers], [sighs], " <>
                  "[excited], [mischievously] — pra variar o tom conforme a situação. Use com " <>
-                 "parcimônia, no máximo uma ou duas por fala, e só quando somam à interpretação."
+                 "parcimônia, no máximo uma ou duas por fala, e só quando somam à interpretação." <>
+                 "\n\nSe a ocasião pedir uma voz diferente da sua padrão (personagem, emoção " <>
+                 "marcante, imitação pedida no chat...), troque o marcador de áudio por " <>
+                 "[[ratobo:voice:descrição breve da voz]] em vez de [[ratobo:audio]] — não use " <>
+                 "os dois juntos. A descrição é livre e curta (ex: \"voz feminina jovem e " <>
+                 "debochada\", \"voz grave e séria de narrador\"): o sistema busca a voz mais " <>
+                 "parecida antes de sintetizar. Use raramente, só quando a voz padrão destoaria " <>
+                 "claramente do que foi pedido."
 
   def instruction, do: @instruction
 
@@ -47,8 +58,18 @@ defmodule GptTalkerbot.PostActions do
       [{@gif_directive, :gif}, {@audio_directive, :audio}]
       |> Enum.filter(fn {directive, _action} -> Regex.match?(directive, text) end)
       |> Enum.map(fn {_directive, action} -> action end)
+      |> add_voice_action(text)
 
     {strip(text), actions}
+  end
+
+  # [[ratobo:voice:...]] implica áudio: some das duas listas em vez de
+  # exigir que o modelo escreva [[ratobo:audio]] junto
+  defp add_voice_action(actions, text) do
+    case Regex.run(@voice_directive, text) do
+      [_, description] -> Enum.uniq([:audio, {:voice, String.trim(description)} | actions])
+      nil -> actions
+    end
   end
 
   @doc "Remove qualquer diretiva do texto, inclusive as desconhecidas"

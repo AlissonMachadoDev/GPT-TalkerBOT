@@ -32,8 +32,9 @@ defmodule GptTalkerbot.RuntimeEnvs do
     grok_reasoning: "low",
     openai_model: "gpt-5.4-mini",
     grok_model: "grok-4.5",
-    # TTS: provider selecionável (openai | elevenlabs). ElevenLabs exige
-    # api_key + ao menos a voz "default"; sem eles o TTS cai pro OpenAI.
+    # TTS: provider selecionável (openai | elevenlabs | fish). ElevenLabs e
+    # Fish exigem api_key + ao menos a voz "default"; sem eles o TTS cai pro
+    # OpenAI.
     tts_provider: "openai",
     elevenlabs_api_key: "",
     # Mapa nome->voice_id (formato "default:<id>;male_1:<id>"), pra escolher a
@@ -50,6 +51,12 @@ defmodule GptTalkerbot.RuntimeEnvs do
       "similarity_boost" => 0.75,
       "use_speaker_boost" => true
     },
+    fish_api_key: "",
+    # Mesmo formato do elevenlabs_voices: nome->reference_id da voz clonada
+    fish_voices: %{},
+    # Recomendado pela Fish Audio pra uso em produção (s2.1-pro-free e s1 são
+    # os tiers mais baratos, mas com qualidade/latência piores)
+    fish_model: "s2.1-pro",
     relevance_threshold: 0.4,
     always_include_last: 4,
     max_context_messages: 20,
@@ -89,7 +96,8 @@ defmodule GptTalkerbot.RuntimeEnvs do
     :grok_model,
     :telegram_webhook_secret,
     :tts_provider,
-    :elevenlabs_model
+    :elevenlabs_model,
+    :fish_model
   ]
   @integer_list_params [:allowed_groups, :allowed_users]
 
@@ -105,6 +113,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
         openai_api_key: Application.get_env(:gpt_talkerbot, :openai_api_key, ""),
         grok_api_key: Application.get_env(:gpt_talkerbot, :grok_api_key, ""),
         elevenlabs_api_key: Application.get_env(:gpt_talkerbot, :elevenlabs_api_key, ""),
+        fish_api_key: Application.get_env(:gpt_talkerbot, :fish_api_key, ""),
         telegram_webhook_secret:
           Application.get_env(
             :gpt_talkerbot,
@@ -125,6 +134,10 @@ defmodule GptTalkerbot.RuntimeEnvs do
         elevenlabs_voices:
           normalize_voices(
             Application.get_env(:gpt_talkerbot, :elevenlabs_voices, @defaults.elevenlabs_voices)
+          ),
+        fish_voices:
+          normalize_voices(
+            Application.get_env(:gpt_talkerbot, :fish_voices, @defaults.fish_voices)
           )
       })
       |> fetch_variables()
@@ -155,12 +168,21 @@ defmodule GptTalkerbot.RuntimeEnvs do
   def get_elevenlabs_model, do: get(:elevenlabs_model)
   def get_elevenlabs_voices, do: get(:elevenlabs_voices)
   def get_elevenlabs_voice_settings, do: get(:elevenlabs_voice_settings)
+  def get_fish_api_key, do: get(:fish_api_key)
+  def get_fish_model, do: get(:fish_model)
+  def get_fish_voices, do: get(:fish_voices)
 
   @doc """
   Voice_id da ElevenLabs para o contexto `name` (default "default"). Cai na voz
   "default" se o nome não existir, ou "" se nem a default estiver configurada.
   """
   def get_elevenlabs_voice(name \\ "default"), do: resolve_voice(get_elevenlabs_voices(), name)
+
+  @doc """
+  Reference_id da Fish Audio para o contexto `name` (default "default"). Cai na
+  voz "default" se o nome não existir, ou "" se nem a default estiver configurada.
+  """
+  def get_fish_voice(name \\ "default"), do: resolve_voice(get_fish_voices(), name)
 
   @doc false
   def resolve_voice(voices, name) do
@@ -172,6 +194,8 @@ defmodule GptTalkerbot.RuntimeEnvs do
     case value do
       :elevenlabs -> :elevenlabs
       "elevenlabs" -> :elevenlabs
+      :fish -> :fish
+      "fish" -> :fish
       _ -> :openai
     end
   end
@@ -192,7 +216,13 @@ defmodule GptTalkerbot.RuntimeEnvs do
 
   # --- Inspeção ---
 
-  @secret_params [:openai_api_key, :grok_api_key, :elevenlabs_api_key, :telegram_webhook_secret]
+  @secret_params [
+    :openai_api_key,
+    :grok_api_key,
+    :elevenlabs_api_key,
+    :fish_api_key,
+    :telegram_webhook_secret
+  ]
 
   @doc """
   Snapshot das variáveis em vigor, com segredos mascarados e o prompt
@@ -278,6 +308,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
       |> fetch_typed(@integer_list_params, &parse_integer_list/2)
       |> Map.put(:user_labels, fetch_user_labels(state.user_labels))
       |> Map.put(:elevenlabs_voices, fetch_elevenlabs_voices(state.elevenlabs_voices))
+      |> Map.put(:fish_voices, fetch_fish_voices(state.fish_voices))
     else
       state
     end
@@ -372,6 +403,15 @@ defmodule GptTalkerbot.RuntimeEnvs do
   # contexto -> voice_id da ElevenLabs
   defp fetch_elevenlabs_voices(fallback) do
     case fetch_raw_param(@ssm_prefix <> "elevenlabs_voices") do
+      {:ok, value} -> parse_user_labels(value)
+      :error -> fallback
+    end
+  end
+
+  # Mesmo formato do elevenlabs_voices, mapeando nome de contexto ->
+  # reference_id da Fish Audio
+  defp fetch_fish_voices(fallback) do
+    case fetch_raw_param(@ssm_prefix <> "fish_voices") do
       {:ok, value} -> parse_user_labels(value)
       :error -> fallback
     end

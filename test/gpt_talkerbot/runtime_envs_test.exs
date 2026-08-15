@@ -34,6 +34,11 @@ defmodule GptTalkerbot.RuntimeEnvsTest do
       assert RuntimeEnvs.normalize_tts_provider(:elevenlabs) == :elevenlabs
     end
 
+    test "reconhece fish como string e como átomo" do
+      assert RuntimeEnvs.normalize_tts_provider("fish") == :fish
+      assert RuntimeEnvs.normalize_tts_provider(:fish) == :fish
+    end
+
     test "openai é o padrão para valor conhecido, desconhecido ou vazio" do
       assert RuntimeEnvs.normalize_tts_provider("openai") == :openai
       assert RuntimeEnvs.normalize_tts_provider(:openai) == :openai
@@ -78,7 +83,13 @@ defmodule GptTalkerbot.RuntimeEnvsTest do
     test "mascara todos os segredos" do
       dump = RuntimeEnvs.dump()
 
-      for key <- [:openai_api_key, :grok_api_key, :elevenlabs_api_key, :telegram_webhook_secret] do
+      for key <- [
+            :openai_api_key,
+            :grok_api_key,
+            :elevenlabs_api_key,
+            :fish_api_key,
+            :telegram_webhook_secret
+          ] do
         assert dump[key] =~ ~r/^\(vazia\)$|^definida \(\d+ chars\)$/
       end
     end
