@@ -22,6 +22,25 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
 
   alias GptTalkerbot.RuntimeEnvs
 
+  # Busca por nome tenta primeiro a própria conta Fish (self: true) — é lá
+  # que ficam as vozes clonadas com nome de personagem, e a busca sai exata
+  # e livre de viés de popularidade. Só cai pra library pública (self: false)
+  # se a conta não tiver nada com esse nome. Sem esse fallback, `title` fuzzy
+  # casa string parecida (ex: "Bras" ~ "Bros") em QUALQUER voz pública, e
+  # sort_by: "score" ordena por popularidade geral — "Bea do Bras" (voz
+  # própria, task_count: 2) nem aparecia nos top-20 sem o self:true, enquanto
+  # "Smash Bros" (1.4M usos) vinha em primeiro. A similaridade local
+  # (best_title_match) ajuda nos dois casos, mas não resolve sozinha o viés
+  # de popularidade da busca pública — é best-effort dado o que a API oferece.
+  @fish_name_candidate_pool 20
+  @fish_name_min_similarity 0.7
+
+  # O Ratobô só fala PT-BR, então a busca já restringe a voz por idioma pra
+  # não trazer voz cadastrada em outro idioma. Mandado como string única (não
+  # lista) pra não depender de como cada provedor serializa array na query —
+  # um valor só é sempre `language=pt`, sem ambiguidade de `[]` vs vírgula.
+  @target_language "pt"
+
   # PT-BR -> parâmetro real de cada provedor. Os valores da ElevenLabs seguem
   # a convenção usual da label (male/female, young/middle_aged/old) — a doc
   # pública não lista o enum exato, então isso é o melhor palpite, a validar
@@ -89,17 +108,78 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
 
   defp run_fish(nil), do: :error
 
+  defp run_fish(title: name) do
+    key = RuntimeEnvs.get_fish_api_key()
+
+    if key == "" do
+      :error
+    else
+      with :error <- fish_title_search(key, name, true),
+           :error <- fish_title_search(key, name, false) do
+        Logger.warning(
+          "VoiceSearch: fish sem voz pra #{inspect(name)} (nem na própria conta, nem na library pública)"
+        )
+
+        :error
+      end
+    end
+  end
+
   defp run_fish(extra_query) do
     key = RuntimeEnvs.get_fish_api_key()
 
     if key == "" do
       :error
     else
-      query = extra_query ++ [page_size: 1, sort_by: "score"]
+      query = extra_query ++ [language: @target_language, page_size: 1, sort_by: "score"]
 
       fish_client(key)
       |> Tesla.get("/model", query: query)
       |> handle_result(["items", Access.at(0), "_id"], "fish", extra_query)
+    end
+  end
+
+  defp fish_title_search(key, name, self?) do
+    query = [
+      title: name,
+      self: self?,
+      language: @target_language,
+      page_size: @fish_name_candidate_pool,
+      sort_by: "score"
+    ]
+
+    fish_client(key)
+    |> Tesla.get("/model", query: query)
+    |> extract_fish_name_match(name)
+  end
+
+  defp extract_fish_name_match({:ok, %{status: 200, body: body}}, name) do
+    case get_in(body, ["items"]) do
+      items when is_list(items) and items != [] -> best_title_match(items, name)
+      _ -> :error
+    end
+  end
+
+  defp extract_fish_name_match(result, name) do
+    Logger.warning("VoiceSearch: fish falhou pra #{inspect(title: name)}: #{inspect(result)}")
+    :error
+  end
+
+  defp best_title_match(items, name) do
+    normalized_name = name |> String.trim() |> String.downcase()
+
+    items
+    |> Enum.map(fn item ->
+      title = (get_in(item, ["title"]) || "") |> String.trim() |> String.downcase()
+      {String.jaro_distance(normalized_name, title), get_in(item, ["_id"])}
+    end)
+    |> Enum.filter(fn {score, id} ->
+      score >= @fish_name_min_similarity and is_binary(id) and id != ""
+    end)
+    |> Enum.max_by(fn {score, _id} -> score end, fn -> nil end)
+    |> case do
+      nil -> :error
+      {_score, id} -> {:ok, id}
     end
   end
 
@@ -111,7 +191,7 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
     if key == "" do
       :error
     else
-      query = extra_query ++ [page_size: 1]
+      query = extra_query ++ [language: @target_language, page_size: 1]
 
       elevenlabs_client(key)
       |> Tesla.get("/v2/voices", query: query)
