@@ -1,6 +1,8 @@
 import Config
 
-# Configure your database
+# Postgres local (docker). scripts/gen_dev_secret.sh sobrescreve estes campos
+# com o banco do servidor. Se a URL de produção for localhost, o app usa
+# 127.0.0.1:15432 e o scripts/dev_up.sh abre o túnel SSH até lá.
 config :gpt_talkerbot, GptTalkerbot.Repo,
   username: "postgres",
   password: "postgres",

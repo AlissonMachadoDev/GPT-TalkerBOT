@@ -1,13 +1,17 @@
 #!/bin/sh
 # Configura o ambiente local para desenvolvimento — NÃO sobe a aplicação:
 #   1. Abre um túnel ngrok em background (PID salvo em .ngrok.pid)
-#   2. Aponta o webhook do Telegram para <ngrok>/webhook
+#   2. Se config/dev.db_tunnel existir, abre um túnel SSH até o Postgres
+#      do servidor (a URL de produção usa localhost, que só vale lá)
+#   3. Aponta o webhook do Telegram para <ngrok>/webhook
+#
+# Não roda migration. O banco do servidor já está atualizado.
 #
 # Depois disso, suba o app manualmente: iex -S mix phx.server
 #
 # Uso:
-#   scripts/dev_up.sh        # sobe túnel + registra webhook
-#   scripts/dev_up.sh stop   # encerra o ngrok
+#   scripts/dev_up.sh        # sobe túneis + registra webhook
+#   scripts/dev_up.sh stop   # encerra ngrok e o túnel do Postgres
 #
 # ATENÇÃO: o setWebhook redireciona TODOS os updates do bot para a sua
 # máquina. Se o token em dev.secret.exs for o mesmo do bot de produção,
@@ -18,8 +22,19 @@ cd "$(dirname "$0")/.."
 
 PORT=4000
 PID_FILE=".ngrok.pid"
+DB_TUNNEL_FILE="config/dev.db_tunnel"
+DB_TUNNEL_PID=".db_tunnel.pid"
+
+stop_db_tunnel() {
+  if [ -f "$DB_TUNNEL_PID" ]; then
+    kill "$(cat "$DB_TUNNEL_PID")" 2>/dev/null || true
+    rm -f "$DB_TUNNEL_PID"
+    echo "túnel do Postgres encerrado."
+  fi
+}
 
 if [ "${1:-}" = "stop" ]; then
+  stop_db_tunnel
   if [ -f "$PID_FILE" ]; then
     kill "$(cat "$PID_FILE")" 2>/dev/null || true
     rm -f "$PID_FILE"
@@ -30,6 +45,29 @@ if [ "${1:-}" = "stop" ]; then
     echo "Nenhum ngrok registrado em ${PID_FILE}."
   fi
   exit 0
+fi
+
+if [ -f "$DB_TUNNEL_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$DB_TUNNEL_FILE"
+  if [ -f "$DB_TUNNEL_PID" ] && kill -0 "$(cat "$DB_TUNNEL_PID")" 2>/dev/null; then
+    echo "==> túnel do Postgres já está aberto (PID $(cat "$DB_TUNNEL_PID"))"
+  else
+    echo "==> Abrindo túnel SSH para o Postgres do servidor (${ssh_host}:${remote_port} -> 127.0.0.1:${local_port})"
+    ssh -N \
+      -o ExitOnForwardFailure=yes \
+      -o BatchMode=yes \
+      -o StrictHostKeyChecking=accept-new \
+      -L "127.0.0.1:${local_port}:127.0.0.1:${remote_port}" \
+      "${ssh_user}@${ssh_host}" &
+    echo $! > "$DB_TUNNEL_PID"
+    sleep 1
+    if ! kill -0 "$(cat "$DB_TUNNEL_PID")" 2>/dev/null; then
+      echo "ERRO: túnel SSH do Postgres não abriu. Confira a chave para ${ssh_user}@${ssh_host}."
+      rm -f "$DB_TUNNEL_PID"
+      exit 1
+    fi
+  fi
 fi
 
 if ! command -v ngrok >/dev/null; then
@@ -98,5 +136,6 @@ echo ""
 echo "==> Pronto. Ambiente apontado para a sua máquina:"
 echo "    webhook:  ${SERVER_HOST}"
 echo "    ngrok:    PID $(cat "$PID_FILE") em background (scripts/dev_up.sh stop para encerrar)"
+echo "    postgres: túnel SSH até o banco do servidor (sem migration)"
 echo ""
 echo "    Agora suba o app:  iex -S mix phx.server"
