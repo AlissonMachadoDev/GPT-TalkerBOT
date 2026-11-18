@@ -188,7 +188,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, raw_content, message) do
     result =
       cond do
-        turns = dialogue_turns(raw_content) -> send_with_dialogue(reply, turns, message)
+        inputs = dialogue_inputs(raw_content) -> send_with_dialogue(reply, inputs, message)
         :audio in actions -> send_with_audio(reply, actions, message)
         :gif in actions -> send_with_gif(reply, message)
         message.chat_type == "private" -> send_rich_reply(reply, message)
@@ -198,18 +198,68 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     delivered(result)
   end
 
-  # Diálogo multi-voz depende do provider ativo (ver RuntimeEnvs.tts_dialogue?);
-  # onde não dá, as falas nem são separadas e o áudio sai em voz única. Com 0 ou
-  # 1 marcador de voz não é diálogo — é o caso de fala única já coberto por
-  # :voice_name/:voice_style em `actions` (ver voice_override/1)
-  defp dialogue_turns(raw_content) do
+  # Falas já prontas pro TTS (%{text:, voice_id:}) ou nil quando a resposta não
+  # é cena. Diálogo multi-voz depende do provider ativo (ver
+  # RuntimeEnvs.tts_dialogue?); onde não dá, as falas nem são separadas e o
+  # áudio sai em voz única.
+  defp dialogue_inputs(raw_content) do
     if RuntimeEnvs.tts_dialogue?() do
-      case PostActions.voice_turns(raw_content) do
-        turns when length(turns) >= 2 -> turns
-        _ -> nil
-      end
+      bipolar_inputs(raw_content) || marked_inputs(raw_content)
     end
   end
+
+  # Modo bipolar: o elenco vem declarado uma vez e as falas são roteiro. Cada
+  # personagem é buscado UMA vez, não uma vez por fala — numa cena de seis
+  # falas entre dois personagens isso é a diferença entre 2 e 6 buscas (e cada
+  # busca por nome gasta até duas requisições, ver VoiceSearch).
+  defp bipolar_inputs(raw_content) do
+    with cast when cast != [] <- PostActions.cast(raw_content),
+         [_, _ | _] = turns <- PostActions.script_turns(raw_content, cast) do
+      voices = resolve_cast(cast)
+
+      Enum.map(turns, fn %{name: name, text: text} ->
+        %{text: PostActions.speech_text(text), voice_id: Map.fetch!(voices, name)}
+      end)
+    else
+      _ -> nil
+    end
+  end
+
+  # Marcador por fala: continua sendo o caminho de cena com voz por ESTILO,
+  # que o elenco do modo bipolar não cobre. Com 0 ou 1 marcador não é diálogo —
+  # é o caso de fala única já coberto por :voice_name/:voice_style em `actions`
+  # (ver voice_override/1)
+  defp marked_inputs(raw_content) do
+    case PostActions.voice_turns(raw_content) do
+      [_, _ | _] = turns ->
+        Enum.map(turns, fn %{action: action, text: text} ->
+          %{text: PostActions.speech_text(text), voice_id: resolve_voice(action)}
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp resolve_cast(cast) do
+    voices = Map.new(cast, fn name -> {name, resolve_voice({:voice_name, name})} end)
+    warn_if_monologue(cast, voices)
+    voices
+  end
+
+  # Personagem que a biblioteca de vozes não tem cai na default. Com o elenco
+  # inteiro caindo nela, a cena sai como monólogo — tecnicamente um sucesso,
+  # mas não é o que foi pedido, e sem esse aviso o sintoma só aparece no áudio.
+  defp warn_if_monologue([_, _ | _] = cast, voices) do
+    if voices |> Map.values() |> Enum.uniq() |> length() == 1 do
+      Logger.warning(
+        "MessageHandler: nenhuma voz do elenco #{inspect(cast)} foi encontrada; " <>
+          "todas caíram na default e a cena vai sair em monólogo"
+      )
+    end
+  end
+
+  defp warn_if_monologue(_cast, _voices), do: :ok
 
   # Normaliza o resultado do envio: só conta como entregue o que o
   # Telegram aceitou — é o que decide se a resposta entra no histórico
@@ -305,16 +355,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     end
   end
 
-  # Duas ou mais falas marcadas: cada uma resolve sua própria voz (cai na
-  # default do provider se a busca não achar nada — nunca aborta o diálogo
-  # por causa de uma fala só). Falha na chamada de diálogo em si cai pro
-  # fallback de sempre: texto normal, nunca silêncio.
-  defp send_with_dialogue(reply, turns, %{chat_id: chat_id, message_id: message_id} = message) do
-    inputs =
-      Enum.map(turns, fn %{action: action, text: text} ->
-        %{text: PostActions.speech_text(text), voice_id: resolve_voice(action)}
-      end)
-
+  # Duas ou mais falas, com as vozes já resolvidas (cada busca sem resultado
+  # caiu na default do provider — nunca aborta o diálogo por causa de uma fala
+  # só). Falha na chamada de diálogo em si cai pro fallback de sempre: texto
+  # normal, nunca silêncio.
+  defp send_with_dialogue(reply, inputs, %{chat_id: chat_id, message_id: message_id} = message) do
     case TTS.synthesize_dialogue(inputs) do
       {:ok, audio} ->
         caption = reply |> PostActions.strip_audio_tags() |> String.slice(0, @caption_max)
