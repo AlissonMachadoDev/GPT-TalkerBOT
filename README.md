@@ -104,13 +104,29 @@ default:21m00Tcm4TlvDq8ikWAM;male_1:pNInz6obpgDQGcFmaJgB;narrador:...
 
 **Adicionar uma voz (Fish Audio)** — mesmo esquema no parâmetro SSM
 `fish_voices`: `nome:reference_id;nome:reference_id`. O `reference_id` vem da
-Voice Library da Fish Audio. `fish_model` seleciona o modelo (`s2.1-pro` por
-padrão, o recomendado pela Fish para produção).
+Voice Library da Fish Audio. A voz `default` cobre o que a busca dinâmica não
+achar.
 
-Hoje **só a `default` é usada** — toda nota de voz sai com ela. A seleção de voz
-por contexto/diálogo ainda não é dirigida pelo prompt; existe apenas o gancho de
-código `RuntimeEnvs.get_elevenlabs_voice/1` / `RuntimeEnvs.get_fish_voice/1`, a
-ser ligado quando os diálogos multi-voz forem implementados.
+**Modelo da Fish** — `fish_model` no SSM. O padrão é `s2.1-pro` (US$ 15 por
+milhão de bytes UTF-8). `drama-3` custa US$ 50 pelo mesmo volume, mas é o único
+que entende direção de atuação em frase inteira e em português
+(`[sussurrando, fingindo pena]`), tags prosódicas (`<whisper>`, `<emphasis>`,
+`<soft>`, `<fast>`, `<slow>`, `<stress>`, `<forceful>`) e várias vozes num áudio
+só. Trocar o parâmetro basta: `RuntimeEnvs.fish_drama?/0` ajusta sozinho a
+instrução mandada ao LLM e habilita o caminho de diálogo. Valor inválido não
+quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente.
+
+**Voz por contexto** — o modelo pode pedir uma voz específica com
+`[[ratobo:voice:nome:...]]` (busca por nome na biblioteca do provider) ou
+`[[ratobo:voice:estilo:...]]` (vocabulário fixo → `tag`/`gender`/`age`), em
+`Services.VoiceSearch`. Busca sem resultado cai na voz `default` do provider
+ativo, sem derrubar a síntese.
+
+**Diálogo multi-voz** — um marcador de voz por fala põe todas num áudio só.
+Funciona na ElevenLabs (`text-to-dialogue`, até 10 vozes) e na Fish com
+`drama-3` (`reference_id` em array + marcadores `<|speaker:N|>`). Nos demais o
+pipeline nem separa as falas: o áudio sai inteiro na voz da primeira — e a
+instrução mandada ao LLM diz isso, pra ele não contar com o que não existe.
 
 ## Desenvolvimento
 

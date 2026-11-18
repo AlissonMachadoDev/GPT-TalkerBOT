@@ -15,6 +15,10 @@ defmodule GptTalkerbot.RuntimeEnvs do
   @refresh_interval_ms 12 * 60 * 60 * 1_000
   @ssm_prefix "/gpt_talkerbot/prod/"
 
+  # Modelo da Fish com os recursos de direção e multi-voz; os demais aceitam o
+  # mesmo endpoint mas só sintetizam a fala
+  @drama_model "drama-3"
+
   @defaults %{
     openai_api_key: "",
     grok_api_key: "",
@@ -55,7 +59,10 @@ defmodule GptTalkerbot.RuntimeEnvs do
     # Mesmo formato do elevenlabs_voices: nome->reference_id da voz clonada
     fish_voices: %{},
     # Recomendado pela Fish Audio pra uso em produção (s2.1-pro-free e s1 são
-    # os tiers mais baratos, mas com qualidade/latência piores)
+    # os tiers mais baratos, mas com qualidade/latência piores). O "drama-3" é
+    # o único que faz diálogo multi-voz e direção de atuação em frase inteira
+    # (ver fish_drama?/0), mas custa US$ 50 por milhão de bytes contra US$ 15
+    # deste — trocar pelo SSM quando a expressividade compensar o custo.
     fish_model: "s2.1-pro",
     relevance_threshold: 0.4,
     always_include_last: 4,
@@ -183,6 +190,21 @@ defmodule GptTalkerbot.RuntimeEnvs do
   voz "default" se o nome não existir, ou "" se nem a default estiver configurada.
   """
   def get_fish_voice(name \\ "default"), do: resolve_voice(get_fish_voices(), name)
+
+  @doc """
+  Se o provider ativo é a Fish no modelo drama-3, que além da fala simples
+  entende direção de atuação em frase inteira e em qualquer idioma ([quase
+  rindo, fingindo pena]), tags prosódicas (<whisper>, <emphasis>...) e várias
+  vozes num áudio só (reference_id em array + marcadores <|speaker:N|>).
+  """
+  def fish_drama?, do: get_tts_provider() == :fish and get_fish_model() == @drama_model
+
+  @doc """
+  Se o provider de TTS ativo sabe pôr várias vozes num mesmo áudio: ElevenLabs
+  (text-to-dialogue) ou Fish no drama-3. A Fish nos demais modelos ignora os
+  marcadores de locutor e leria o diálogo inteiro numa voz só, então não conta.
+  """
+  def tts_dialogue?, do: get_tts_provider() == :elevenlabs or fish_drama?()
 
   @doc false
   def resolve_voice(voices, name) do
