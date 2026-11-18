@@ -164,8 +164,63 @@ defmodule GptTalkerbot.PostActionsTest do
       assert PostActions.strip_audio_tags("kkkk clássico do Beto") == "kkkk clássico do Beto"
     end
 
+    test "direção longa em português, com vírgula, também some" do
+      assert PostActions.strip_audio_tags("[sussurrando, fingindo pena] coitado") == "coitado"
+    end
+
+    test "tag prosódica some e deixa o trecho que ela envolvia" do
+      assert PostActions.strip_audio_tags("é <emphasis>agora</emphasis> ou nunca") ==
+               "é agora ou nunca"
+    end
+
+    test "direção com dígito não é tratada como tag — é placar do usuário" do
+      assert PostActions.strip_audio_tags("[virada de 3x2] que jogo") ==
+               "[virada de 3x2] que jogo"
+    end
+
+    test "direção longa demais fica no texto em vez de engolir a frase" do
+      longa = "[" <> String.duplicate("a", 90) <> "]"
+      assert PostActions.strip_audio_tags(longa <> " fim") == longa <> " fim"
+    end
+
+    test "colchete de uma letra só não é direção" do
+      assert PostActions.strip_audio_tags("item [a] da lista") == "item [a] da lista"
+    end
+
     test "nil vira string vazia" do
       assert PostActions.strip_audio_tags(nil) == ""
+    end
+  end
+
+  describe "speech_text/1" do
+    test "tira o HTML do Telegram" do
+      assert PostActions.speech_text("olha o <b>rato</b> aí") == "olha o rato aí"
+    end
+
+    test "preserva as tags prosódicas, que vão dirigir a síntese" do
+      assert PostActions.speech_text("fala <whisper>baixo</whisper> agora") ==
+               "fala <whisper>baixo</whisper> agora"
+    end
+
+    test "separa prosódia de HTML na mesma frase" do
+      assert PostActions.speech_text("<i>ei</i>, <emphasis>para</emphasis>") ==
+               "ei, <emphasis>para</emphasis>"
+    end
+
+    test "tag parecida com prosódica mas não listada é tratada como HTML" do
+      assert PostActions.speech_text("<slowly>devagar</slowly>") == "devagar"
+    end
+
+    test "direção de colchete passa intacta — quem limpa é strip_audio_tags" do
+      assert PostActions.speech_text("[quase rindo] <b>oi</b>") == "[quase rindo] oi"
+    end
+
+    test "texto sem tag nenhuma sai apenas aparado" do
+      assert PostActions.speech_text("  fala pura  ") == "fala pura"
+    end
+
+    test "nil vira string vazia" do
+      assert PostActions.speech_text(nil) == ""
     end
   end
 end

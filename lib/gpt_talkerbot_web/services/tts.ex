@@ -111,21 +111,47 @@ defmodule GptTalkerbotWeb.Services.TTS do
   end
 
   @doc """
-  Sintetiza um diálogo com várias vozes num áudio só (text-to-dialogue da
-  ElevenLabs — os outros providers não têm equivalente por API, só estúdio
-  no browser). `inputs` é uma lista de `%{"text" => ..., "voice_id" => ...}`,
-  uma entrada por fala, até 10 vozes distintas.
+  Sintetiza um diálogo com várias vozes num áudio só. `turns` é uma lista de
+  `%{text: ..., voice_id: ...}`, uma entrada por fala.
 
-  Sem fallback automático pro OpenAI: diálogo multi-voz não existe fora da
-  ElevenLabs, então um erro aqui significa "sem diálogo mesmo" — quem chama
-  decide se cai pra síntese de voz única ou pra texto.
+  Dois caminhos: text-to-dialogue da ElevenLabs (até 10 vozes distintas) e a
+  Fish no drama-3, que aceita `reference_id` em array e indexa as falas com
+  marcadores `<|speaker:N|>`. Nos demais — inclusive a Fish fora do drama-3,
+  que leria os marcadores como texto — devolve `{:error, :unsupported}`.
+
+  Sem fallback automático pro OpenAI: um erro aqui significa "sem diálogo
+  mesmo", e quem chama decide se cai pra síntese de voz única ou pra texto.
   """
-  def synthesize_dialogue(inputs) when is_list(inputs) and inputs != [] do
+  def synthesize_dialogue(turns) when is_list(turns) and turns != [] do
+    cond do
+      not RuntimeEnvs.tts_dialogue?() ->
+        {:error, :unsupported}
+
+      # Voz vazia é o que sobra quando a busca não acha nada e nem a "default"
+      # está configurada. A ElevenLabs recusaria o input e a Fish montaria um
+      # reference_id furado — falhar aqui dá um erro legível no log.
+      Enum.any?(turns, &(&1.voice_id in [nil, ""])) ->
+        {:error, :no_voice}
+
+      true ->
+        dialogue(turns)
+    end
+  end
+
+  defp dialogue(turns) do
+    case RuntimeEnvs.get_tts_provider() do
+      :elevenlabs -> elevenlabs_dialogue(turns)
+      :fish -> fish_dialogue(turns)
+    end
+  end
+
+  defp elevenlabs_dialogue(turns) do
     key = RuntimeEnvs.get_elevenlabs_api_key()
 
     if key == "" do
       {:error, :no_api_key}
     else
+      inputs = Enum.map(turns, &%{"text" => &1.text, "voice_id" => &1.voice_id})
       client = elevenlabs_client(key)
       url = "/text-to-dialogue?output_format=#{@elevenlabs_output_format}"
       body = %{"inputs" => inputs, "model_id" => RuntimeEnvs.get_elevenlabs_model()}
@@ -154,6 +180,40 @@ defmodule GptTalkerbotWeb.Services.TTS do
 
       audio_or_error(Tesla.post(client, "/tts", body))
     end
+  end
+
+  defp fish_dialogue(turns) do
+    key = RuntimeEnvs.get_fish_api_key()
+
+    if key == "" do
+      {:error, :no_api_key}
+    else
+      audio_or_error(Tesla.post(fish_client(key), "/tts", build_fish_dialogue_body(turns)))
+    end
+  end
+
+  @doc """
+  Monta o corpo do /tts multi-voz da Fish: as vozes viram o array
+  `reference_id` e cada fala é prefixada pelo marcador `<|speaker:N|>`, onde N
+  é a posição da voz nesse array.
+
+  Como o índice é posicional, personagem que fala mais de uma vez precisa
+  colapsar numa entrada só — daí a deduplicação por ordem de aparição.
+  """
+  def build_fish_dialogue_body(turns) do
+    voices = turns |> Enum.map(& &1.voice_id) |> Enum.uniq()
+    index_of = voices |> Enum.with_index() |> Map.new()
+
+    text =
+      Enum.map_join(turns, fn %{text: text, voice_id: voice} ->
+        "<|speaker:#{index_of[voice]}|>#{text}"
+      end)
+
+    %{
+      "text" => text,
+      "reference_id" => voices,
+      "format" => @fish_output_format
+    }
   end
 
   defp fish_client(api_key) do

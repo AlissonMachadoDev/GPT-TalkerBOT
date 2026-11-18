@@ -198,11 +198,12 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     delivered(result)
   end
 
-  # Diálogo multi-voz só existe via API na ElevenLabs (text-to-dialogue); com
-  # 0 ou 1 marcador de voz não é diálogo — é o caso de fala única já coberto
-  # por :voice_name/:voice_style em `actions` (ver voice_override/1)
+  # Diálogo multi-voz depende do provider ativo (ver RuntimeEnvs.tts_dialogue?);
+  # onde não dá, as falas nem são separadas e o áudio sai em voz única. Com 0 ou
+  # 1 marcador de voz não é diálogo — é o caso de fala única já coberto por
+  # :voice_name/:voice_style em `actions` (ver voice_override/1)
   defp dialogue_turns(raw_content) do
-    if RuntimeEnvs.get_tts_provider() == :elevenlabs do
+    if RuntimeEnvs.tts_dialogue?() do
       case PostActions.voice_turns(raw_content) do
         turns when length(turns) >= 2 -> turns
         _ -> nil
@@ -282,9 +283,9 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # a fala (limpo de HTML pro TTS) e vai junto como legenda. Qualquer falha
   # (TTS fora, voz recusada) cai pro texto normal — o rato nunca fica mudo.
   defp send_with_audio(reply, actions, %{chat_id: chat_id, message_id: message_id} = message) do
-    # O texto vai com as audio tags do v3 pro sintetizador; a legenda e o
-    # fallback de texto saem sem elas, pra ninguém ler "[sarcastic]" escrito.
-    with spoken when spoken != "" <- plain_text(reply),
+    # O texto vai com a direção de entrega pro sintetizador; a legenda e o
+    # fallback de texto saem sem ela, pra ninguém ler "[sarcastic]" escrito.
+    with spoken when spoken != "" <- PostActions.speech_text(reply),
          {:ok, audio} <- TTS.synthesize(spoken, voice_override(actions)) do
       caption = spoken |> PostActions.strip_audio_tags() |> String.slice(0, @caption_max)
 
@@ -305,13 +306,13 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   # Duas ou mais falas marcadas: cada uma resolve sua própria voz (cai na
-  # default da ElevenLabs se a busca não achar nada — nunca aborta o
-  # diálogo por causa de uma fala só). Falha na chamada de diálogo em si
-  # cai pro fallback de sempre: texto normal, nunca silêncio.
+  # default do provider se a busca não achar nada — nunca aborta o diálogo
+  # por causa de uma fala só). Falha na chamada de diálogo em si cai pro
+  # fallback de sempre: texto normal, nunca silêncio.
   defp send_with_dialogue(reply, turns, %{chat_id: chat_id, message_id: message_id} = message) do
     inputs =
       Enum.map(turns, fn %{action: action, text: text} ->
-        %{"text" => plain_text(text), "voice_id" => resolve_voice(action)}
+        %{text: PostActions.speech_text(text), voice_id: resolve_voice(action)}
       end)
 
     case TTS.synthesize_dialogue(inputs) do
@@ -338,7 +339,14 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp resolve_voice(action) do
     case VoiceSearch.find_voice(action) do
       {:ok, voice_id} -> voice_id
-      :error -> RuntimeEnvs.get_elevenlabs_voice("default")
+      :error -> default_voice()
+    end
+  end
+
+  defp default_voice do
+    case RuntimeEnvs.get_tts_provider() do
+      :fish -> RuntimeEnvs.get_fish_voice("default")
+      _ -> RuntimeEnvs.get_elevenlabs_voice("default")
     end
   end
 
@@ -359,12 +367,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           :error -> nil
         end
     end
-  end
-
-  defp plain_text(text) do
-    text
-    |> String.replace(~r/<[^>]+>/, "")
-    |> String.trim()
   end
 
   defp send_message(text, %{chat_id: chat_id, message_id: message_id} = message) do
