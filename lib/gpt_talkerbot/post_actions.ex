@@ -34,7 +34,37 @@ defmodule GptTalkerbot.PostActions do
   # pelos dois directives acima, independentes)
   @voice_turn_directive ~r/\[\[\s*ratobo:\s*voice:\s*(nome|estilo):\s*([^\]]{1,60}?)\s*\]\]/iu
 
-  @any_directive ~r/\[\[\s*ratobo:[^\]]{0,60}\]\]/iu
+  # Modo bipolar: o elenco da cena declarado UMA vez, e as falas escritas como
+  # roteiro ("Fulano: ..."). Evita repetir o marcador de voz em cada fala — o
+  # que não é só verbosidade: resolver o elenco de uma vez troca uma busca por
+  # fala por uma busca por personagem (ver VoiceSearch, que gasta até duas
+  # requisições em cada busca por nome).
+  @bipolar_directive ~r/\[\[\s*ratobo:\s*bipolar:\s*([^\]]{1,200}?)\s*\]\]/iu
+
+  # Pedido explícito do modo na mensagem do usuário (ver bipolar_requested?/1).
+  # Aceita hífen e espaço extra porque é o que varia na digitação, mas não
+  # aceita sinônimo: o modo é um comando, não uma intenção a ser adivinhada.
+  @bipolar_request ~r/\bmodo[\s-]+bipolar\b/iu
+
+  # O limite de 200 acompanha o do elenco acima; com {0,60} (que bastava pros
+  # marcadores antigos) um [[ratobo:bipolar:...]] de quatro nomes escapava da
+  # limpeza e aparecia escrito na resposta.
+  @any_directive ~r/\[\[\s*ratobo:[^\]]{0,200}\]\]/iu
+
+  # Linha de roteiro: "Nome: fala". O prefixo é curto de propósito — frase
+  # comum terminada em dois-pontos ("Olha só essa cena:") não deve virar fala.
+  # Só conta mesmo se o prefixo casar com alguém do elenco (ver script_turns/2).
+  @script_line ~r/^\s*([^:\n]{1,40}):\s*(.*)$/u
+
+  # Mais apertado que @script_line porque aqui não há elenco pra conferir o
+  # nome (ver implied_cast/1): exige inicial maiúscula, no máximo quatro
+  # palavras, nada de dígito, e texto de verdade depois dos dois-pontos.
+  @implied_speaker ~r/^\s*(\p{Lu}[\p{L}'’.-]*(?:\s+[\p{L}'’.-]+){0,3}):\s+\S/u
+
+  # Teto do elenco. A ElevenLabs documenta 10 vozes distintas e a Fish não
+  # publica número, mas quatro personagens já é mais gente do que uma nota de
+  # voz de piada comporta — e cada um a mais é outra busca de voz.
+  @max_cast 4
 
   # Direção de entrega entre colchetes: tanto as audio tags curtas do eleven_v3
   # ([sarcastic], [laughs harder]) quanto a frase inteira que o drama-3 aceita
@@ -89,12 +119,13 @@ defmodule GptTalkerbot.PostActions do
                        "com parcimônia, no máximo uma ou duas por fala, e só quando somam à " <>
                        "interpretação."
 
-  @voice_instruction "\n\nSe a ocasião pedir uma voz diferente da sua padrão (personagem, " <>
-                       "emoção marcante, imitação pedida no chat...), troque o marcador de " <>
-                       "áudio por UM dos dois abaixo — nunca os dois juntos, nunca junto com " <>
-                       "[[ratobo:audio]]:\n" <>
+  @voice_instruction "\n\nSe a cena tem UMA VOZ SÓ do começo ao fim e ela é diferente da sua " <>
+                       "padrão (personagem, emoção marcante, imitação pedida no chat...), " <>
+                       "troque o marcador de áudio por UM dos dois abaixo — nunca os dois " <>
+                       "juntos, nunca junto com [[ratobo:audio]]. Se mais de um personagem " <>
+                       "fala, NÃO é aqui: é o elenco explicado acima.\n" <>
                        "— Pediram a voz de uma PESSOA ou PERSONAGEM específico e conhecido " <>
-                       "(\"voz do fulano\", \"voz de tal personagem\")? " <>
+                       "(\"voz do fulano\", \"voz de tal personagem\"), e só ele fala? " <>
                        "[[ratobo:voice:nome:nome da pessoa ou personagem]] — busca pelo nome " <>
                        "exato; só acha se existir alguém cadastrado com esse nome, senão volta " <>
                        "pra voz padrão sem avisar.\n" <>
@@ -106,18 +137,54 @@ defmodule GptTalkerbot.PostActions do
                        "nada.\nUse qualquer um dos dois raramente, só quando a voz padrão " <>
                        "destoaria claramente do que foi pedido."
 
-  @dialogue_instruction "\n\nPra DIÁLOGO com mais de uma voz no mesmo áudio (cena com dois " <>
-                          "personagens, por exemplo), repita um marcador " <>
+  @dialogue_instruction "\n\nDentro do MODO BIPOLAR (e só dentro dele), existe uma forma " <>
+                          "alternativa de marcar as falas: repetir um marcador " <>
                           "[[ratobo:voice:nome:...]] ou [[ratobo:voice:estilo:...]] no início " <>
-                          "de CADA fala, alternando conforme quem fala — inclusive a primeira " <>
-                          "fala precisa vir com marcador, senão ela não entra no áudio. " <>
-                          "Exemplo:\n" <>
+                          "de CADA fala, alternando conforme quem fala. Serve quando os " <>
+                          "personagens não têm nome e sim estilo (\"um velho e uma moça\"), " <>
+                          "que o elenco não cobre. Exemplo:\n" <>
                           "[[ratobo:voice:nome:Fulano]] Fala do Fulano aqui.\n" <>
                           "[[ratobo:voice:estilo:feminina agressiva]] Resposta da segunda voz " <>
-                          "aqui.\n"
+                          "aqui.\n" <>
+                          "Fora do modo bipolar NÃO repita esses marcadores: um só, no fim da " <>
+                          "resposta, troca a voz do áudio inteiro.\n"
 
   @dialogue_supported "O provedor de voz ativo monta isso num áudio só, com as vozes " <>
                         "alternando de verdade."
+
+  @bipolar_instruction "\n\nMODO BIPOLAR — só quando a mensagem disser essas duas palavras, " <>
+                         "\"modo bipolar\", com todas as letras. Citar duas pessoas, pedir uma " <>
+                         "discussão ou descrever uma cena NÃO aciona o modo: sem a expressão " <>
+                         "escrita, a resposta é áudio de uma voz só, pelos marcadores de " <>
+                         "sempre. Pedido como \"faz o fulano e o beltrano discutindo\" não é " <>
+                         "modo bipolar; \"responde em modo bipolar com as vozes de fulano e " <>
+                         "beltrano\" é.\n" <>
+                         "Quando ele for pedido de verdade, essa regra vem antes das outras de " <>
+                         "voz: use o elenco e NÃO use [[ratobo:audio]] nem " <>
+                         "[[ratobo:voice:nome:...]] nem [[ratobo:voice:estilo:...]] — esses " <>
+                         "três são de áudio de UMA voz e jogariam todas as falas numa voz " <>
+                         "só.\n" <>
+                         "Monte a cena assim:\n" <>
+                         "1. Declare o elenco UMA vez, em uma linha própria, com os nomes " <>
+                         "separados por vírgula: [[ratobo:bipolar:Silvio Santos, Faustão]]. " <>
+                         "No máximo #{@max_cast} nomes; se pedirem mais, escolha os " <>
+                         "#{@max_cast} que rendem mais piada. Se o nome de UM personagem tiver " <>
+                         "vírgula ou \"e\" dentro dele (dupla, nome de programa), ponha esse " <>
+                         "nome entre parênteses pra ele não ser lido como dois: " <>
+                         "[[ratobo:bipolar:(Chico e Felipe), Galvão]] são DOIS personagens, o " <>
+                         "primeiro chamado \"Chico e Felipe\".\n" <>
+                         "2. Escreva as falas como roteiro, uma por linha, começando pelo nome " <>
+                         "do elenco seguido de dois-pontos. Use o nome exatamente como " <>
+                         "declarou no elenco. Exemplo:\n" <>
+                         "[[ratobo:bipolar:Silvio Santos, Faustão]]\n" <>
+                         "Silvio Santos: Olha só quem apareceu no meu auditório.\n" <>
+                         "Faustão: Ô loco meu, tu tá maluco?\n" <>
+                         "Silvio Santos: Para tudo!\n" <>
+                         "Cada um pode falar quantas vezes quiser, em qualquer ordem. Não " <>
+                         "escreva narração antes da primeira fala — ela não entra no áudio. " <>
+                         "Não use [[ratobo:audio]] nem [[ratobo:voice:...]] junto: o elenco já " <>
+                         "diz que a resposta é áudio. Se o pedido não citar nome nenhum, " <>
+                         "invente personagens reconhecíveis que combinem com a piada."
 
   @dialogue_unsupported "O provedor de voz ativo não monta diálogo multi-voz: o áudio sai " <>
                           "inteiro numa voz só, a da primeira fala marcada — não é erro, é a " <>
@@ -127,16 +194,28 @@ defmodule GptTalkerbot.PostActions do
   Instrução de pós-ações para o system prompt. Monta em runtime porque as
   partes de direção de voz dependem do provider/modelo de TTS configurado no
   SSM: o que o drama-3 interpreta como atuação, o eleven_v3 não, e vice-versa.
+
+  O modo bipolar só é ensinado onde o provider monta várias vozes num áudio
+  só — ensinar fora disso seria prometer uma cena que sairia em voz única.
   """
   def instruction do
     direction = if RuntimeEnvs.fish_drama?(), do: @drama_instruction, else: @tag_instruction
 
-    dialogue =
-      if RuntimeEnvs.tts_dialogue?(), do: @dialogue_supported, else: @dialogue_unsupported
+    @gif_instruction <> @audio_instruction <> direction <> voice_section()
+  end
 
-    @gif_instruction <>
-      @audio_instruction <>
-      direction <> @voice_instruction <> @dialogue_instruction <> dialogue
+  # O modo bipolar vem ANTES dos marcadores de voz única de propósito. Com ele
+  # por último, um pedido como "cena da fulana e da beltrana brigando" casava
+  # primeiro com "pediram a voz de uma PESSOA específica?" do
+  # @voice_instruction, e o modelo emitia [[ratobo:voice:nome:...]] — uma voz
+  # só pra cena inteira, sem nunca chegar a ler a regra do elenco.
+  defp voice_section do
+    if RuntimeEnvs.tts_dialogue?() do
+      @bipolar_instruction <>
+        @voice_instruction <> @dialogue_instruction <> @dialogue_supported
+    else
+      @voice_instruction <> @dialogue_instruction <> @dialogue_unsupported
+    end
   end
 
   @doc "Separa o texto limpo das pós-ações sinalizadas nele"
@@ -177,6 +256,209 @@ defmodule GptTalkerbot.PostActions do
     |> String.downcase()
     |> String.split(~r/[,\s]+/, trim: true)
     |> Enum.filter(&(&1 in @style_words))
+  end
+
+  @doc """
+  Se a mensagem do usuário pede o modo bipolar com todas as letras.
+
+  O acionamento é a expressão escrita, não a inferência: citar duas pessoas ou
+  descrever uma discussão não basta. A instrução diz isso ao modelo, mas quem
+  garante é esta função — o pipeline só monta cena multi-voz quando ela passa,
+  então um modelo que resolva inventar elenco por conta própria não transforma
+  um pedido comum em áudio de várias vozes.
+  """
+  def bipolar_requested?(nil), do: false
+
+  def bipolar_requested?(text), do: Regex.match?(@bipolar_request, text)
+
+  @doc """
+  Elenco do modo bipolar: os nomes declarados em [[ratobo:bipolar:A, B, C]],
+  na ordem, sem repetição e no máximo #{@max_cast}.
+
+  `[]` quando o marcador não existe ou não sobrou nome nenhum nele — e aí não
+  há cena a montar, o texto segue como resposta comum.
+  """
+  def cast(nil), do: []
+
+  def cast(text) do
+    case Regex.run(@bipolar_directive, text) do
+      [_, names] -> parse_cast(names)
+      _ -> []
+    end
+  end
+
+  # "A, B e C" e "A, B, e C" são como se escreve lista em português, e o modelo
+  # escreve o elenco espelhando o pedido do usuário. Separar só por vírgula
+  # deixava a conjunção colada no nome ("e Galvão"), que nunca casa com a fala
+  # "Galvão:" nem acha voz na biblioteca. Dupla com "e" no nome (Chitãozinho e
+  # Xororó) acaba virando dois personagens — troca aceitável, já que o caso
+  # comum é conjunção.
+  @cast_separator ~r/\s*,\s*(?:e\s+)?|\s+e\s+/iu
+
+  # Escape do separador: parênteses marcam UM personagem só, mesmo com vírgula
+  # ou "e" dentro do nome. "(Chico e Felipe)" é uma busca por "Chico e Felipe",
+  # não duas — serve pra dupla, nome de programa, apelido composto, qualquer
+  # grafia da biblioteca que contenha o separador.
+  @protected_name ~r/\(\s*([^)]{1,80}?)\s*\)/u
+
+  # Artigo e preposição que o modelo arrasta do pedido pro elenco: "as vozes DA
+  # Bea e DA Patricia" vira [[ratobo:bipolar:Bea do Bras e da Patricia Poeta]].
+  # "da Patricia Poeta" não acha voz nenhuma na biblioteca e nem casa com a
+  # fala escrita "Patricia Poeta:". Só no começo do nome — o "do" de
+  # "Bea do Bras" é parte dele e fica.
+  @leading_article ~r/^(?:[ao]s?|d[aeo]s?)\s+/iu
+
+  defp parse_cast(names) do
+    {masked, protected} = mask_protected(names)
+
+    masked
+    |> String.split(@cast_separator, trim: true)
+    |> Enum.map(&restore_protected(&1, protected))
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.replace(&1, @leading_article, ""))
+    |> Enum.reject(&(normalize_name(&1) in ["", "e"]))
+    |> Enum.uniq_by(&normalize_name/1)
+    |> Enum.take(@max_cast)
+  end
+
+  # Troca cada grupo protegido por um marcador que o separador não quebra, pra
+  # ele atravessar o split inteiro. \x00 não aparece em resposta de LLM e não
+  # casa @cast_separator, então serve de marcador sem escapar nada.
+  defp mask_protected(names) do
+    protected = @protected_name |> Regex.scan(names) |> Enum.map(fn [_full, inner] -> inner end)
+
+    masked =
+      protected
+      |> Enum.with_index()
+      |> Enum.reduce(names, fn {_inner, index}, text ->
+        Regex.replace(@protected_name, text, "\x00#{index}\x00", global: false)
+      end)
+
+    {masked, protected}
+  end
+
+  defp restore_protected(part, protected) do
+    protected
+    |> Enum.with_index()
+    |> Enum.reduce(part, fn {inner, index}, acc ->
+      String.replace(acc, "\x00#{index}\x00", inner)
+    end)
+  end
+
+  @doc """
+  Elenco deduzido do próprio roteiro, para quando o modelo escreve a cena em
+  formato de fala mas erra o marcador — emitindo [[ratobo:voice:nome:X]], que
+  vale pra UMA voz, em vez do elenco. Sem isso a cena inteira sai na voz do
+  primeiro nome.
+
+  Sem elenco declarado não há com que conferir os nomes, então as salvaguardas
+  vêm da forma: prefixo começando em maiúscula, no máximo quatro palavras e
+  sem dígito; pelo menos dois falantes distintos; e as falas precisam ser ao
+  menos metade das linhas, senão é texto comum que por acaso tem dois-pontos.
+
+  Use só quando a resposta JÁ vai virar áudio — aí a dúvida é quantas vozes,
+  não se é cena.
+  """
+  def implied_cast(nil), do: []
+
+  def implied_cast(text) do
+    linhas = text |> strip() |> String.split("\n") |> Enum.reject(&(String.trim(&1) == ""))
+
+    falantes =
+      linhas
+      |> Enum.map(&Regex.run(@implied_speaker, &1))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(fn [_, nome] -> String.trim(nome) end)
+
+    nomes = Enum.uniq_by(falantes, &normalize_name/1)
+
+    if length(nomes) >= 2 and length(falantes) * 2 >= length(linhas) do
+      Enum.take(nomes, @max_cast)
+    else
+      []
+    end
+  end
+
+  @doc """
+  Separa `text` em falas de roteiro ("Fulano: fala") atribuídas a `cast`.
+  Devolve `%{name: nome_do_elenco, text: fala}`, com `name` sempre na grafia
+  declarada no elenco — é ela que o chamador usa pra achar a voz já resolvida.
+
+  Linha que não abre fala nova pertence à fala anterior, então personagem pode
+  falar vários parágrafos. Texto antes da primeira fala reconhecida é
+  descartado: é narração de enquadramento ("olha essa cena:"), não fala de
+  ninguém.
+
+  `[]` quando nada casa — o chamador trata como "não é cena" e segue o fluxo
+  normal, em vez de mandar áudio vazio pro sintetizador.
+  """
+  def script_turns(nil, _cast), do: []
+  def script_turns(_text, []), do: []
+
+  def script_turns(text, cast) do
+    # strip/1 antes de fatiar porque o marcador pode vir no fim da resposta,
+    # como os outros [[ratobo:...]] do projeto. Ali ele cairia na última fala
+    # como continuação e seria lido em voz alta pelo sintetizador.
+    text
+    |> strip()
+    |> String.split("\n")
+    |> Enum.reduce([], &absorb_line(&1, &2, cast))
+    |> Enum.reverse()
+    |> Enum.map(fn turn -> %{turn | text: String.trim(turn.text)} end)
+    |> Enum.reject(&(&1.text == ""))
+  end
+
+  defp absorb_line(line, turns, cast) do
+    case speaker_of(line, cast) do
+      {name, said} -> [%{name: name, text: said} | turns]
+      nil -> continue_turn(line, turns)
+    end
+  end
+
+  # Antes da primeira fala não há a quem atribuir a linha, então ela cai fora
+  defp continue_turn(_line, []), do: []
+
+  defp continue_turn(line, [current | rest]) do
+    [%{current | text: current.text <> "\n" <> line} | rest]
+  end
+
+  defp speaker_of(line, cast) do
+    with [_, prefix, said] <- Regex.run(@script_line, line),
+         name when not is_nil(name) <- match_cast(prefix, cast) do
+      {name, said}
+    else
+      _ -> nil
+    end
+  end
+
+  # O modelo abrevia o que declarou no elenco ("Silvio Santos" vira "Silvio:"),
+  # então o primeiro nome também vale. Sem isso a fala viraria continuação da
+  # anterior e sairia na voz errada.
+  defp match_cast(prefix, cast) do
+    normalized = normalize_name(prefix)
+
+    Enum.find(cast, fn name ->
+      canonical = normalize_name(name)
+      canonical == normalized or first_name(canonical) == normalized
+    end)
+  end
+
+  defp first_name(name), do: name |> String.split(" ", parts: 2) |> hd()
+
+  # Acento e caixa não podem decidir de quem é a fala: o elenco vem do pedido
+  # do usuário e as falas, da redação do modelo — raramente batem letra a letra.
+  # Parênteses também somem porque o modelo repete o escape na fala
+  # ("(Chico e Felipe): ...") depois de usá-lo no elenco.
+  defp normalize_name(name) do
+    name
+    |> String.replace(~r/[()]/u, "")
+    |> String.trim()
+    # também no casamento, não só no elenco: o modelo erra dos dois lados, e
+    # "da Patricia Poeta:" numa fala tem que achar a "Patricia Poeta" do elenco
+    |> String.replace(@leading_article, "")
+    |> String.downcase()
+    |> :unicode.characters_to_nfd_binary()
+    |> String.replace(~r/[\x{0300}-\x{036F}]/u, "")
   end
 
   @doc """

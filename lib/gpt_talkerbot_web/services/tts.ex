@@ -27,6 +27,16 @@ defmodule GptTalkerbotWeb.Services.TTS do
 
   @fish_output_format "opus"
 
+  # Teto documentado do text-to-dialogue: a ElevenLabs pede no máximo 2000
+  # caracteres somando todos os inputs[].text, e avisa que acima disso a
+  # requisição pode truncar no streaming ou voltar erro de validação.
+  @elevenlabs_dialogue_max_chars 2000
+
+  # A Fish não publica teto no /v1/tts, então aqui o corte é de custo, não de
+  # limite técnico — ela cobra por byte UTF-8 de entrada. Folga sobre a
+  # ElevenLabs porque o provider aguenta cena maior.
+  @fish_dialogue_max_chars 4000
+
   @doc """
   Sintetiza `text` em áudio. Retorna `{:ok, binary}` (Ogg/Opus) ou
   `{:error, reason}`.
@@ -119,6 +129,10 @@ defmodule GptTalkerbotWeb.Services.TTS do
   marcadores `<|speaker:N|>`. Nos demais — inclusive a Fish fora do drama-3,
   que leria os marcadores como texto — devolve `{:error, :unsupported}`.
 
+  Cena comprida é cortada na última fala que couber no orçamento do provider
+  (ver trim_to_budget/2) — melhor uma cena curta do que a última fala cortada
+  no meio da palavra.
+
   Sem fallback automático pro OpenAI: um erro aqui significa "sem diálogo
   mesmo", e quem chama decide se cai pra síntese de voz única ou pra texto.
   """
@@ -140,8 +154,38 @@ defmodule GptTalkerbotWeb.Services.TTS do
 
   defp dialogue(turns) do
     case RuntimeEnvs.get_tts_provider() do
-      :elevenlabs -> elevenlabs_dialogue(turns)
-      :fish -> fish_dialogue(turns)
+      :elevenlabs ->
+        turns |> trim_to_budget(@elevenlabs_dialogue_max_chars) |> elevenlabs_dialogue()
+
+      :fish ->
+        turns |> trim_to_budget(@fish_dialogue_max_chars) |> fish_dialogue()
+    end
+  end
+
+  @doc """
+  Descarta falas do fim da cena até o total caber em `budget` caracteres.
+
+  A fala é a unidade: cortar no meio dela deixaria o personagem mudo na
+  metade da frase. A exceção é a primeira — se ela sozinha já estoura o
+  orçamento, aí sim é truncada, porque devolver cena vazia seria pior.
+  """
+  def trim_to_budget(turns, budget) do
+    {kept, _used} = Enum.reduce_while(turns, {[], 0}, &take_while_fits(&1, &2, budget))
+    Enum.reverse(kept)
+  end
+
+  defp take_while_fits(turn, {acc, used}, budget) do
+    size = String.length(turn.text)
+
+    cond do
+      acc == [] and size > budget ->
+        {:halt, {[%{turn | text: String.slice(turn.text, 0, budget)}], budget}}
+
+      used + size > budget ->
+        {:halt, {acc, used}}
+
+      true ->
+        {:cont, {[turn | acc], used + size}}
     end
   end
 

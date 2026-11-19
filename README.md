@@ -107,14 +107,18 @@ default:21m00Tcm4TlvDq8ikWAM;male_1:pNInz6obpgDQGcFmaJgB;narrador:...
 Voice Library da Fish Audio. A voz `default` cobre o que a busca dinâmica não
 achar.
 
-**Modelo da Fish** — `fish_model` no SSM. O padrão é `s2.1-pro` (US$ 15 por
-milhão de bytes UTF-8). `drama-3` custa US$ 50 pelo mesmo volume, mas é o único
-que entende direção de atuação em frase inteira e em português
+**Modelo da Fish** — `fish_model` no SSM, padrão `drama-3`. É o único que
+entende direção de atuação em frase inteira e em português
 (`[sussurrando, fingindo pena]`), tags prosódicas (`<whisper>`, `<emphasis>`,
 `<soft>`, `<fast>`, `<slow>`, `<stress>`, `<forceful>`) e várias vozes num áudio
-só. Trocar o parâmetro basta: `RuntimeEnvs.fish_drama?/0` ajusta sozinho a
-instrução mandada ao LLM e habilita o caminho de diálogo. Valor inválido não
-quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente.
+só — **sem ele o modo bipolar não existe** e toda cena sai em voz única.
+
+Custa US$ 50 por milhão de bytes UTF-8 contra US$ 15 do `s2.1-pro`. Se o custo
+apertar, o SSM derruba pra lá e o pipeline se adapta sozinho:
+`RuntimeEnvs.fish_drama?/0` e `tts_dialogue?/0` param de separar as falas e a
+instrução mandada ao LLM deixa de ensinar o modo bipolar. Valor inválido não
+quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente, então um typo aqui
+se manifesta como cena em voz única, não como erro.
 
 **Voz por contexto** — o modelo pode pedir uma voz específica com
 `[[ratobo:voice:nome:...]]` (busca por nome na biblioteca do provider) ou
@@ -122,11 +126,63 @@ quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente.
 `Services.VoiceSearch`. Busca sem resultado cai na voz `default` do provider
 ativo, sem derrubar a síntese.
 
-**Diálogo multi-voz** — um marcador de voz por fala põe todas num áudio só.
-Funciona na ElevenLabs (`text-to-dialogue`, até 10 vozes) e na Fish com
-`drama-3` (`reference_id` em array + marcadores `<|speaker:N|>`). Nos demais o
-pipeline nem separa as falas: o áudio sai inteiro na voz da primeira — e a
-instrução mandada ao LLM diz isso, pra ele não contar com o que não existe.
+**Diálogo multi-voz** — várias vozes num áudio só, sempre dentro do modo
+bipolar (ver abaixo). Funciona na ElevenLabs (`text-to-dialogue`, até 10 vozes)
+e na Fish com `drama-3` (`reference_id` em array + marcadores `<|speaker:N|>`).
+Nos demais o pipeline nem separa as falas: o áudio sai inteiro na voz da
+primeira — e a instrução mandada ao LLM diz isso, pra ele não contar com o que
+não existe.
+
+**Modo bipolar** — o jeito curto de montar uma cena. É um **comando explícito**:
+só acionado quando a mensagem contém as palavras "modo bipolar"
+(`PostActions.bipolar_requested?/1`). Citar duas pessoas, pedir uma discussão ou
+descrever uma cena não aciona — aí a resposta sai como áudio de voz única.
+
+A trava é no pipeline, não só no prompt: sem a expressão escrita, nenhuma
+resposta vira cena, por mais que o modelo declare elenco ou repita marcador de
+voz por fala. Isso evita que o bot gaste o endpoint de diálogo (e as buscas de
+voz) sempre que alguém mencionar dois nomes.
+
+Pedido o modo, o modelo declara o elenco uma vez e escreve as falas como
+roteiro:
+
+```
+[[ratobo:bipolar:Silvio Santos, Faustão]]
+Silvio Santos: Olha só quem apareceu no meu auditório.
+Faustão: Ô loco meu, tu tá maluco?
+Silvio Santos: Para tudo!
+```
+
+Elenco de até 4 nomes. Cada personagem é buscado **uma vez**, não uma vez por
+fala — como a busca por nome gasta até duas requisições, uma cena de seis falas
+entre dois personagens passa de 12 requests para 4. `Nome:` só é lido como fala
+quando o marcador de elenco existe e o nome bate com alguém dele (aceitando
+primeiro nome e ignorando acento/caixa), então frase comum terminada em
+dois-pontos continua sendo texto. Linha sem nome pertence à fala anterior, e
+narração antes da primeira fala é descartada.
+
+O separador aceita vírgula e a conjunção "e", porque é assim que se escreve
+lista em português e o modelo espelha o pedido do usuário: `A, B e C` e
+`A, B, e C` dão o mesmo elenco de três. Quando o separador faz parte do nome,
+**parênteses escapam**:
+
+```
+[[ratobo:bipolar:(Chico e Felipe), Galvão]]
+```
+
+São dois personagens, o primeiro chamado "Chico e Felipe" — uma busca, não
+duas. Vale para vírgula também (`(Tom, Jerry)`). Na fala os parênteses são
+opcionais: tanto `Chico e Felipe:` quanto `(Chico e Felipe):` casam.
+
+O fallback de texto é o próprio roteiro, que já se lê sozinho — se o TTS cair,
+a cena vira mensagem normal com cada fala atribuída.
+
+**Teto de tamanho da cena** — a ElevenLabs documenta no máximo 2.000 caracteres
+somando todos os `inputs[].text` do `text-to-dialogue`; acima disso a resposta
+pode truncar ou dar erro de validação. A Fish não publica teto no `/v1/tts`, mas
+cobra por byte UTF-8, então lá o corte é de custo (4.000). Em ambos o corte é
+por fala inteira: `TTS.trim_to_budget/2` descarta falas do fim até caber, em vez
+de deixar alguém mudo no meio da frase.
 
 ## Desenvolvimento
 

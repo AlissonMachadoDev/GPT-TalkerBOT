@@ -143,6 +143,46 @@ defmodule GptTalkerbotWeb.Services.TTSDialogueTest do
     end
   end
 
+  describe "trim_to_budget/2" do
+    defp turn(text), do: %{text: text, voice_id: "v"}
+
+    test "cena que cabe passa inteira" do
+      turns = [turn("uma"), turn("duas")]
+
+      assert TTS.trim_to_budget(turns, 100) == turns
+    end
+
+    test "descarta falas do fim até caber" do
+      turns = [turn("12345"), turn("67890"), turn("abcde")]
+
+      assert TTS.trim_to_budget(turns, 10) == [turn("12345"), turn("67890")]
+    end
+
+    test "fala que não cabe inteira não entra pela metade" do
+      turns = [turn("12345"), turn("6789012345")]
+
+      assert TTS.trim_to_budget(turns, 12) == [turn("12345")]
+    end
+
+    test "orçamento exato não descarta nada" do
+      turns = [turn("12345"), turn("67890")]
+
+      assert TTS.trim_to_budget(turns, 10) == turns
+    end
+
+    test "primeira fala maior que o orçamento é truncada em vez de sumir" do
+      turns = [turn("1234567890"), turn("depois")]
+
+      assert TTS.trim_to_budget(turns, 4) == [turn("1234")]
+    end
+
+    test "conta caracteres, não bytes — acento não encolhe a cena" do
+      turns = [turn("ãéîõû"), turn("12345")]
+
+      assert TTS.trim_to_budget(turns, 10) == turns
+    end
+  end
+
   describe "PostActions.instruction/0 acompanha o provider" do
     test "no drama-3 pede direção em português e oferece tag prosódica" do
       put_env(%{tts_provider: "fish", fish_model: "drama-3"})
@@ -171,6 +211,18 @@ defmodule GptTalkerbotWeb.Services.TTSDialogueTest do
       put_env(%{tts_provider: "fish", fish_model: "drama-3"})
 
       refute PostActions.instruction() =~ "não monta diálogo multi-voz"
+    end
+
+    test "ensina o modo bipolar onde o provider monta várias vozes" do
+      put_env(%{tts_provider: "fish", fish_model: "drama-3"})
+
+      assert PostActions.instruction() =~ "[[ratobo:bipolar:"
+    end
+
+    test "não promete modo bipolar onde a cena sairia em voz única" do
+      put_env(%{tts_provider: "fish", fish_model: "s2.1-pro"})
+
+      refute PostActions.instruction() =~ "[[ratobo:bipolar:"
     end
 
     test "as partes fixas (gif, marcador de voz) aparecem em qualquer provider" do

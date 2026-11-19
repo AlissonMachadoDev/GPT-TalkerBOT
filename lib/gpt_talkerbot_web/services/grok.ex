@@ -28,6 +28,7 @@ defmodule GptTalkerbotWeb.Services.Grok do
 
     Tesla.post(client, "/chat/completions", body)
     |> handle_response()
+    |> IO.inspect(label: "grok: ")
   end
 
   defp maybe_put_tools(body, tools) when is_list(tools) and tools != [],
