@@ -133,9 +133,13 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
     else
       query = extra_query ++ [language: @target_language, page_size: 1, sort_by: "score"]
 
+      response =
       fish_client(key)
       |> Tesla.get("/model", query: query)
       |> handle_result(["items", Access.at(0), "_id"], "fish", extra_query)
+
+      IO.inspect("query: ****#{inspect(query)}**** - response: ****#{inspect(response)}****")
+      response
     end
   end
 

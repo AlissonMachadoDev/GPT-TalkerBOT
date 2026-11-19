@@ -153,11 +153,13 @@ defmodule GptTalkerbot.PostActionsTest do
     end
 
     test "colchetes com dígito de usuário são preservados" do
-      assert PostActions.strip_audio_tags("o placar foi [2x1] ontem") == "o placar foi [2x1] ontem"
+      assert PostActions.strip_audio_tags("o placar foi [2x1] ontem") ==
+               "o placar foi [2x1] ontem"
     end
 
     test "diretiva [[ratobo:...]] de colchete duplo não é confundida com tag" do
-      assert PostActions.strip_audio_tags("fala aí\n[[ratobo:audio]]") == "fala aí\n[[ratobo:audio]]"
+      assert PostActions.strip_audio_tags("fala aí\n[[ratobo:audio]]") ==
+               "fala aí\n[[ratobo:audio]]"
     end
 
     test "texto sem tag sai intacto" do
@@ -431,6 +433,56 @@ defmodule GptTalkerbot.PostActionsTest do
 
     test "nil vira lista vazia" do
       assert PostActions.script_turns(nil, ["Silvio"]) == []
+    end
+  end
+
+  describe "implied_cast/1" do
+    test "recupera o elenco quando o modelo erra o marcador mas escreve o roteiro" do
+      texto =
+        "[[ratobo:voice:nome:Patricia Poeta]]\n" <>
+          "Patricia Poeta: Que roupa é essa?\n" <>
+          "Bea do Bras: Me erra."
+
+      assert PostActions.implied_cast(texto) == ["Patricia Poeta", "Bea do Bras"]
+    end
+
+    test "um falante só não é cena" do
+      texto = "Patricia Poeta: Falo.\nPatricia Poeta: Continuo."
+
+      assert PostActions.implied_cast(texto) == []
+    end
+
+    test "texto comum com dois-pontos não vira cena" do
+      assert PostActions.implied_cast("Olha: isso aí\nkkkk clássico do Beto") == []
+    end
+
+    test "falas em minoria das linhas não viram cena" do
+      texto = "Ingredientes: farinha\nModo: misturar\nkkkk brincadeira\nPede ifood\nFim"
+
+      assert PostActions.implied_cast(texto) == []
+    end
+
+    test "prefixo em minúscula não é nome de personagem" do
+      assert PostActions.implied_cast("coisa: uma\noutra: duas") == []
+    end
+
+    test "prefixo com dígito não é nome de personagem" do
+      assert PostActions.implied_cast("Round 1: começou\nRound 2: acabou") == []
+    end
+
+    test "dois-pontos sem texto depois não conta como fala" do
+      assert PostActions.implied_cast("Patricia Poeta:\nBea do Bras:") == []
+    end
+
+    test "respeita o teto do elenco" do
+      texto =
+        "Um: a\nDois: b\nTres: c\nQuatro: d\nCinco: e"
+
+      assert length(PostActions.implied_cast(texto)) == 4
+    end
+
+    test "nil vira lista vazia" do
+      assert PostActions.implied_cast(nil) == []
     end
   end
 

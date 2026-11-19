@@ -188,7 +188,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, raw_content, message) do
     result =
       cond do
-        inputs = dialogue_inputs(raw_content) ->
+        inputs = dialogue_inputs(raw_content, actions) ->
           Logger.info("MessageHandler: entrega=cena_multivoz falas=#{length(inputs)}")
           send_with_dialogue(reply, inputs, message)
 
@@ -213,7 +213,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # é cena. Diálogo multi-voz depende do provider ativo (ver
   # RuntimeEnvs.tts_dialogue?); onde não dá, as falas nem são separadas e o
   # áudio sai em voz única.
-  defp dialogue_inputs(raw_content) do
+  defp dialogue_inputs(raw_content, actions) do
     cond do
       not RuntimeEnvs.tts_dialogue?() ->
         # Sem esse aviso, elenco declarado num provider que não monta cena
@@ -235,9 +235,33 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
         Logger.info("MessageHandler: cena pelo marcador por fala (caminho antigo)")
         inputs
 
+      inputs = implied_inputs(raw_content, actions) ->
+        inputs
+
       true ->
         Logger.info("MessageHandler: resposta não é cena (sem elenco e sem 2+ marcadores de voz)")
         nil
+    end
+  end
+
+  # Rede de proteção pro modelo que escreve a cena em roteiro mas erra o
+  # marcador, pedindo [[ratobo:voice:nome:X]] (uma voz) em vez do elenco. Só
+  # entra quando a resposta já vai virar áudio: aí a pergunta é quantas vozes,
+  # e deduzir o elenco do roteiro é melhor que jogar a cena toda numa voz só.
+  defp implied_inputs(raw_content, actions) do
+    if :audio in actions do
+      case PostActions.implied_cast(raw_content) do
+        [] ->
+          nil
+
+        cast ->
+          Logger.warning(
+            "MessageHandler: modelo não declarou elenco mas escreveu roteiro; " <>
+              "elenco deduzido das falas = #{inspect(cast)}"
+          )
+
+          bipolar_inputs(cast, PostActions.script_turns(raw_content, cast))
+      end
     end
   end
 

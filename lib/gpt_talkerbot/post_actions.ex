@@ -51,6 +51,11 @@ defmodule GptTalkerbot.PostActions do
   # Só conta mesmo se o prefixo casar com alguém do elenco (ver script_turns/2).
   @script_line ~r/^\s*([^:\n]{1,40}):\s*(.*)$/u
 
+  # Mais apertado que @script_line porque aqui não há elenco pra conferir o
+  # nome (ver implied_cast/1): exige inicial maiúscula, no máximo quatro
+  # palavras, nada de dígito, e texto de verdade depois dos dois-pontos.
+  @implied_speaker ~r/^\s*(\p{Lu}[\p{L}'’.-]*(?:\s+[\p{L}'’.-]+){0,3}):\s+\S/u
+
   # Teto do elenco. A ElevenLabs documenta 10 vozes distintas e a Fish não
   # publica número, mas quatro personagens já é mais gente do que uma nota de
   # voz de piada comporta — e cada um a mais é outra busca de voz.
@@ -109,12 +114,13 @@ defmodule GptTalkerbot.PostActions do
                        "com parcimônia, no máximo uma ou duas por fala, e só quando somam à " <>
                        "interpretação."
 
-  @voice_instruction "\n\nSe a ocasião pedir uma voz diferente da sua padrão (personagem, " <>
-                       "emoção marcante, imitação pedida no chat...), troque o marcador de " <>
-                       "áudio por UM dos dois abaixo — nunca os dois juntos, nunca junto com " <>
-                       "[[ratobo:audio]]:\n" <>
+  @voice_instruction "\n\nSe a cena tem UMA VOZ SÓ do começo ao fim e ela é diferente da sua " <>
+                       "padrão (personagem, emoção marcante, imitação pedida no chat...), " <>
+                       "troque o marcador de áudio por UM dos dois abaixo — nunca os dois " <>
+                       "juntos, nunca junto com [[ratobo:audio]]. Se mais de um personagem " <>
+                       "fala, NÃO é aqui: é o elenco explicado acima.\n" <>
                        "— Pediram a voz de uma PESSOA ou PERSONAGEM específico e conhecido " <>
-                       "(\"voz do fulano\", \"voz de tal personagem\")? " <>
+                       "(\"voz do fulano\", \"voz de tal personagem\"), e só ele fala? " <>
                        "[[ratobo:voice:nome:nome da pessoa ou personagem]] — busca pelo nome " <>
                        "exato; só acha se existir alguém cadastrado com esse nome, senão volta " <>
                        "pra voz padrão sem avisar.\n" <>
@@ -139,9 +145,16 @@ defmodule GptTalkerbot.PostActions do
   @dialogue_supported "O provedor de voz ativo monta isso num áudio só, com as vozes " <>
                         "alternando de verdade."
 
-  @bipolar_instruction "\n\nQuando pedirem o MODO BIPOLAR (\"responde em modo bipolar\", " <>
-                         "\"modo bipolar com as vozes de fulano e beltrano\"), monte a cena " <>
-                         "assim, que é mais simples do que marcar fala por fala:\n" <>
+  @bipolar_instruction "\n\nREGRA QUE VEM ANTES DAS OUTRAS DE VOZ: se o pedido disser MODO " <>
+                         "BIPOLAR, ou citar mais de um personagem falando, ou descrever uma " <>
+                         "cena entre duas ou mais pessoas, use OBRIGATORIAMENTE o elenco " <>
+                         "abaixo e NÃO use [[ratobo:audio]] nem [[ratobo:voice:nome:...]] nem " <>
+                         "[[ratobo:voice:estilo:...]] — esses três são só pra áudio de UMA voz " <>
+                         "e desperdiçariam a cena, jogando todas as falas numa voz só.\n" <>
+                         "Exemplos de pedido que caem AQUI: \"modo bipolar com as vozes de " <>
+                         "fulano e beltrano\", \"faz o fulano e o beltrano discutindo\", \"uma " <>
+                         "briga entre X e Y\".\n" <>
+                         "Monte a cena assim:\n" <>
                          "1. Declare o elenco UMA vez, em uma linha própria, com os nomes " <>
                          "separados por vírgula: [[ratobo:bipolar:Silvio Santos, Faustão]]. " <>
                          "No máximo #{@max_cast} nomes; se pedirem mais, escolha os " <>
@@ -178,14 +191,21 @@ defmodule GptTalkerbot.PostActions do
   def instruction do
     direction = if RuntimeEnvs.fish_drama?(), do: @drama_instruction, else: @tag_instruction
 
-    dialogue =
-      if RuntimeEnvs.tts_dialogue?(),
-        do: @dialogue_supported <> @bipolar_instruction,
-        else: @dialogue_unsupported
+    @gif_instruction <> @audio_instruction <> direction <> voice_section()
+  end
 
-    @gif_instruction <>
-      @audio_instruction <>
-      direction <> @voice_instruction <> @dialogue_instruction <> dialogue
+  # O modo bipolar vem ANTES dos marcadores de voz única de propósito. Com ele
+  # por último, um pedido como "cena da fulana e da beltrana brigando" casava
+  # primeiro com "pediram a voz de uma PESSOA específica?" do
+  # @voice_instruction, e o modelo emitia [[ratobo:voice:nome:...]] — uma voz
+  # só pra cena inteira, sem nunca chegar a ler a regra do elenco.
+  defp voice_section do
+    if RuntimeEnvs.tts_dialogue?() do
+      @bipolar_instruction <>
+        @voice_instruction <> @dialogue_instruction <> @dialogue_supported
+    else
+      @voice_instruction <> @dialogue_instruction <> @dialogue_unsupported
+    end
   end
 
   @doc "Separa o texto limpo das pós-ações sinalizadas nele"
@@ -300,6 +320,40 @@ defmodule GptTalkerbot.PostActions do
     |> Enum.reduce(part, fn {inner, index}, acc ->
       String.replace(acc, "\x00#{index}\x00", inner)
     end)
+  end
+
+  @doc """
+  Elenco deduzido do próprio roteiro, para quando o modelo escreve a cena em
+  formato de fala mas erra o marcador — emitindo [[ratobo:voice:nome:X]], que
+  vale pra UMA voz, em vez do elenco. Sem isso a cena inteira sai na voz do
+  primeiro nome.
+
+  Sem elenco declarado não há com que conferir os nomes, então as salvaguardas
+  vêm da forma: prefixo começando em maiúscula, no máximo quatro palavras e
+  sem dígito; pelo menos dois falantes distintos; e as falas precisam ser ao
+  menos metade das linhas, senão é texto comum que por acaso tem dois-pontos.
+
+  Use só quando a resposta JÁ vai virar áudio — aí a dúvida é quantas vozes,
+  não se é cena.
+  """
+  def implied_cast(nil), do: []
+
+  def implied_cast(text) do
+    linhas = text |> strip() |> String.split("\n") |> Enum.reject(&(String.trim(&1) == ""))
+
+    falantes =
+      linhas
+      |> Enum.map(&Regex.run(@implied_speaker, &1))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(fn [_, nome] -> String.trim(nome) end)
+
+    nomes = Enum.uniq_by(falantes, &normalize_name/1)
+
+    if length(nomes) >= 2 and length(falantes) * 2 >= length(linhas) do
+      Enum.take(nomes, @max_cast)
+    else
+      []
+    end
   end
 
   @doc """
