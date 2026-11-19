@@ -55,8 +55,8 @@ defmodule GptTalkerbotWeb.BotController do
         handle_slash_command(conn, message, text, user_id)
 
       true ->
-        Reactor.maybe_react(chat_id, message["message_id"])
-        Interjector.maybe_interject(chat_id)
+        # Reactor.maybe_react(chat_id, message["message_id"])
+        # Interjector.maybe_interject(chat_id)
         GifMemory.maybe_send(chat_id)
         send_resp(conn, 204, "")
     end

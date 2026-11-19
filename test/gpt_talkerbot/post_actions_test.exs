@@ -260,6 +260,21 @@ defmodule GptTalkerbot.PostActionsTest do
       assert PostActions.cast("[[ratobo:bipolar:(), Galvão]]") == ["Galvão"]
     end
 
+    test "preposição arrastada do pedido não entra no nome buscado" do
+      assert PostActions.cast("[[ratobo:bipolar:Bea do Bras e da Patricia Poeta]]") ==
+               ["Bea do Bras", "Patricia Poeta"]
+    end
+
+    test "artigo na frente de cada nome também sai" do
+      assert PostActions.cast("[[ratobo:bipolar:a Bea do Bras, o Faustão, as Chiquititas]]") ==
+               ["Bea do Bras", "Faustão", "Chiquititas"]
+    end
+
+    test "preposição no meio do nome é parte dele e fica" do
+      assert PostActions.cast("[[ratobo:bipolar:Bea do Bras, Maria das Dores]]") ==
+               ["Bea do Bras", "Maria das Dores"]
+    end
+
     test "sem marcador não há elenco" do
       assert PostActions.cast("kkkk clássico do Beto") == []
     end
@@ -388,6 +403,15 @@ defmodule GptTalkerbot.PostActionsTest do
              ]
     end
 
+    test "fala escrita com preposição na frente casa o nome do elenco" do
+      texto = "da Patricia Poeta: Que roupa é essa?\nBea do Bras: Me erra."
+
+      assert PostActions.script_turns(texto, ["Bea do Bras", "Patricia Poeta"]) == [
+               %{name: "Patricia Poeta", text: "Que roupa é essa?"},
+               %{name: "Bea do Bras", text: "Me erra."}
+             ]
+    end
+
     test "linha em branco entre falas não cria fala vazia" do
       texto = "Silvio: Um.\n\nFaustão: Dois."
 
@@ -412,7 +436,8 @@ defmodule GptTalkerbot.PostActionsTest do
 
   describe "strip/1 com o marcador de elenco" do
     test "marcador bipolar longo some da resposta" do
-      texto = "[[ratobo:bipolar:Silvio Santos, Faustão, Galvão Bueno, Ana Maria Braga]]\nSilvio: oi"
+      texto =
+        "[[ratobo:bipolar:Silvio Santos, Faustão, Galvão Bueno, Ana Maria Braga]]\nSilvio: oi"
 
       assert PostActions.strip(texto) == "Silvio: oi"
     end

@@ -258,6 +258,13 @@ defmodule GptTalkerbot.PostActions do
   # grafia da biblioteca que contenha o separador.
   @protected_name ~r/\(\s*([^)]{1,80}?)\s*\)/u
 
+  # Artigo e preposição que o modelo arrasta do pedido pro elenco: "as vozes DA
+  # Bea e DA Patricia" vira [[ratobo:bipolar:Bea do Bras e da Patricia Poeta]].
+  # "da Patricia Poeta" não acha voz nenhuma na biblioteca e nem casa com a
+  # fala escrita "Patricia Poeta:". Só no começo do nome — o "do" de
+  # "Bea do Bras" é parte dele e fica.
+  @leading_article ~r/^(?:[ao]s?|d[aeo]s?)\s+/iu
+
   defp parse_cast(names) do
     {masked, protected} = mask_protected(names)
 
@@ -265,6 +272,7 @@ defmodule GptTalkerbot.PostActions do
     |> String.split(@cast_separator, trim: true)
     |> Enum.map(&restore_protected(&1, protected))
     |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.replace(&1, @leading_article, ""))
     |> Enum.reject(&(normalize_name(&1) in ["", "e"]))
     |> Enum.uniq_by(&normalize_name/1)
     |> Enum.take(@max_cast)
@@ -368,6 +376,9 @@ defmodule GptTalkerbot.PostActions do
     name
     |> String.replace(~r/[()]/u, "")
     |> String.trim()
+    # também no casamento, não só no elenco: o modelo erra dos dois lados, e
+    # "da Patricia Poeta:" numa fala tem que achar a "Patricia Poeta" do elenco
+    |> String.replace(@leading_article, "")
     |> String.downcase()
     |> :unicode.characters_to_nfd_binary()
     |> String.replace(~r/[\x{0300}-\x{036F}]/u, "")

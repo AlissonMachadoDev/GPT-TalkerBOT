@@ -282,8 +282,15 @@ defmodule GptTalkerbotWeb.Services.TTS do
 
   # A resposta 200 vem com content-type de áudio: o JSON middleware não a
   # decodifica e o corpo chega como binário cru
-  defp audio_or_error({:ok, %{status: 200, body: audio}}) when is_binary(audio) and audio != "",
-    do: {:ok, audio}
+  defp audio_or_error({:ok, %{status: 200, body: audio}} = response) when is_binary(audio) and audio != ""
+    do
+      IO.inspect(inspect(response))
+      {:ok, audio}
+    end
 
-  defp audio_or_error(_), do: {:error, :unavailable}
+  defp audio_or_error(response) do
+    IO.inspect(inspect(response))
+    {:error, :unavailable}
+  end
+  
 end
