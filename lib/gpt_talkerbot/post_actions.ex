@@ -106,7 +106,7 @@ defmodule GptTalkerbot.PostActions do
                      "fala — [sarcastic], [laughs], [whispers], [sighs], [excited], " <>
                      "[mischievously] — pra variar o tom conforme a situação. Use com " <>
                      "parcimônia, no máximo uma ou duas por fala, e só quando somam à " <>
-                     "interpretação."
+                     "interpretação — no modo bipolar a regra é outra, ver lá."
 
   # O drama-3 aceita a direção escrita em qualquer idioma e em frase inteira,
   # então aqui ela sai em português e descrevendo a cena, não como etiqueta
@@ -117,7 +117,7 @@ defmodule GptTalkerbot.PostActions do
                        "curto com <whisper>, <emphasis>, <soft>, <fast>, <slow>, <stress> ou " <>
                        "<forceful>, sempre fechando a tag (<emphasis>agora</emphasis>). Use " <>
                        "com parcimônia, no máximo uma ou duas por fala, e só quando somam à " <>
-                       "interpretação."
+                       "interpretação — no modo bipolar a regra é outra, ver lá."
 
   @voice_instruction "\n\nSe a cena tem UMA VOZ SÓ do começo ao fim e ela é diferente da sua " <>
                        "padrão (personagem, emoção marcante, imitação pedida no chat...), " <>
@@ -179,12 +179,47 @@ defmodule GptTalkerbot.PostActions do
                          "[[ratobo:bipolar:Silvio Santos, Faustão]]\n" <>
                          "Silvio Santos: Olha só quem apareceu no meu auditório.\n" <>
                          "Faustão: Ô loco meu, tu tá maluco?\n" <>
-                         "Silvio Santos: Para tudo!\n" <>
-                         "Cada um pode falar quantas vezes quiser, em qualquer ordem. Não " <>
-                         "escreva narração antes da primeira fala — ela não entra no áudio. " <>
-                         "Não use [[ratobo:audio]] nem [[ratobo:voice:...]] junto: o elenco já " <>
-                         "diz que a resposta é áudio. Se o pedido não citar nome nenhum, " <>
-                         "invente personagens reconhecíveis que combinem com a piada."
+                         "Silvio Santos: Para tudo!"
+
+  @bipolar_closing "\nCada um pode falar quantas vezes quiser, em qualquer ordem. Não " <>
+                     "escreva narração antes da primeira fala — ela não entra no áudio. " <>
+                     "Não use [[ratobo:audio]] nem [[ratobo:voice:...]] junto: o elenco já diz " <>
+                     "que a resposta é áudio. Se o pedido não citar nome nenhum, invente " <>
+                     "personagens reconhecíveis que combinem com a piada."
+
+  # Dentro da cena a regra de parcimônia das outras seções NÃO vale, e isso
+  # precisa estar dito com todas as letras porque elas dizem o contrário. Fora
+  # do efeito cômico, direção forte e distinta por personagem é o que mantém as
+  # vozes separadas no ouvido quando o sintetizador começa a misturá-las.
+  @bipolar_drama_performance "\n3. PERFORMANCE: aqui, ao contrário do resto, carregue na " <>
+                               "direção. TODA fala abre com direção entre colchetes em " <>
+                               "português, e as falas longas levam mais uma ou duas no meio — " <>
+                               "[explodindo de raiva], [baixando o tom, venenosa], [rindo de " <>
+                               "nervoso, voz tremendo]. Descreva emoção, intenção, volume e " <>
+                               "ritmo, não só o humor. Marque as palavras de impacto com " <>
+                               "<emphasis>, <forceful>, <whisper>, <slow> ou <fast>, sempre " <>
+                               "fechando a tag. Dê a cada personagem um jeito PRÓPRIO e " <>
+                               "constante de falar: se um grita e atropela, o outro cochicha e " <>
+                               "arrasta — direção igual nos dois faz as vozes se confundirem. " <>
+                               "Nunca ponha dígito dentro dos colchetes da direção. A cena do " <>
+                               "exemplo acima, dirigida, sai assim:\n" <>
+                               "Silvio Santos: [doce, falsamente acolhedor] Olha só quem " <>
+                               "apareceu no meu <emphasis>auditório</emphasis>.\n" <>
+                               "Faustão: [explodindo, atropelando as palavras] Ô loco meu, tu " <>
+                               "tá <forceful>maluco</forceful>?\n" <>
+                               "Silvio Santos: [cortando seco, voz de gelo] Para tudo."
+
+  @bipolar_tag_performance "\n3. PERFORMANCE: aqui, ao contrário do resto, carregue nas audio " <>
+                             "tags. TODA fala abre com uma tag e as longas levam mais uma no " <>
+                             "meio — [sarcastic], [laughs], [whispers], [shouting], [angry], " <>
+                             "[crying], [mischievously]. Dê a cada personagem um conjunto " <>
+                             "PRÓPRIO e constante de tags: se um grita, o outro cochicha — tag " <>
+                             "igual nos dois faz as vozes se confundirem. A cena do exemplo " <>
+                             "acima, dirigida, sai assim:\n" <>
+                             "Silvio Santos: [mischievously] Olha só quem apareceu no meu " <>
+                             "auditório.\n" <>
+                             "Faustão: [shouting] Ô loco meu, tu tá maluco?\n" <>
+                             "Silvio Santos: [angry] Para tudo."
 
   @dialogue_unsupported "O provedor de voz ativo não monta diálogo multi-voz: o áudio sai " <>
                           "inteiro numa voz só, a da primeira fala marcada — não é erro, é a " <>
@@ -204,6 +239,19 @@ defmodule GptTalkerbot.PostActions do
     @gif_instruction <> @audio_instruction <> direction <> voice_section()
   end
 
+  # A performance entra entre o roteiro e as notas finais, e o vocabulário
+  # segue o modelo ativo: direção em frase inteira no drama-3, audio tag curta
+  # nos demais — pedir frase onde o modelo só entende etiqueta faz ele ler a
+  # direção em voz alta.
+  defp bipolar_section do
+    performance =
+      if RuntimeEnvs.fish_drama?(),
+        do: @bipolar_drama_performance,
+        else: @bipolar_tag_performance
+
+    @bipolar_instruction <> performance <> @bipolar_closing
+  end
+
   # O modo bipolar vem ANTES dos marcadores de voz única de propósito. Com ele
   # por último, um pedido como "cena da fulana e da beltrana brigando" casava
   # primeiro com "pediram a voz de uma PESSOA específica?" do
@@ -211,7 +259,7 @@ defmodule GptTalkerbot.PostActions do
   # só pra cena inteira, sem nunca chegar a ler a regra do elenco.
   defp voice_section do
     if RuntimeEnvs.tts_dialogue?() do
-      @bipolar_instruction <>
+      bipolar_section() <>
         @voice_instruction <> @dialogue_instruction <> @dialogue_supported
     else
       @voice_instruction <> @dialogue_instruction <> @dialogue_unsupported
