@@ -13,7 +13,12 @@ permissions:
 jobs:
   deploy:
     name: "Deploy to EC2"
-    runs-on: ubuntu-latest
+    # Fixo em 24.04 para casar com o Ubuntu da instância de produção. A release
+    # leva o ERTS embutido, e o beam.smp é linkado contra a glibc da máquina que
+    # compila — glibc só é compatível para trás, então build em imagem mais nova
+    # que a prod derruba o boot com "version `GLIBC_2.XX' not found".
+    # Só troque esta linha depois de atualizar o EC2.
+    runs-on: ubuntu-24.04
 
     environment: production
 
@@ -37,6 +42,9 @@ jobs:
           elixir-version: "1.17.3"
           otp-version: "27.2"
 
+      # Só o toolchain de C, para compilar NIFs das deps. O Erlang vem do
+      # setup-beam acima: instalar erlang-dev/erlang-src do apt traria uma
+      # versão diferente do OTP 27.2 e misturaria ABI na release.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -45,9 +53,7 @@ jobs:
           git \
           make \
           gcc \
-          g++ \
-          erlang-dev \
-          erlang-src
+          g++
 
       - name: Install Dependencies
         run: |
