@@ -58,12 +58,12 @@ defmodule GptTalkerbot.RuntimeEnvs do
     fish_api_key: "",
     # Mesmo formato do elevenlabs_voices: nome->reference_id da voz clonada
     fish_voices: %{},
-    # Recomendado pela Fish Audio pra uso em produção (s2.1-pro-free e s1 são
-    # os tiers mais baratos, mas com qualidade/latência piores). O "drama-3" é
-    # o único que faz diálogo multi-voz e direção de atuação em frase inteira
-    # (ver fish_drama?/0), mas custa US$ 50 por milhão de bytes contra US$ 15
-    # deste — trocar pelo SSM quando a expressividade compensar o custo.
-    fish_model: "s2.1-pro",
+    # Único modelo da Fish que faz diálogo multi-voz e direção de atuação em
+    # frase inteira (ver fish_drama?/0) — sem ele o modo bipolar não existe e
+    # toda cena sai em voz única. Custa US$ 50 por milhão de bytes UTF-8
+    # contra US$ 15 do s2.1-pro; se o custo apertar, o SSM derruba pra lá e o
+    # pipeline se adapta sozinho, deixando de separar as falas.
+    fish_model: "drama-3",
     relevance_threshold: 0.4,
     always_include_last: 4,
     max_context_messages: 20,
@@ -136,8 +136,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
           Application.get_env(:gpt_talkerbot, :allowed_users, @defaults.allowed_users),
         # tts_provider e elevenlabs_voices normalmente vêm do SSM; em dev (SSM
         # off) esse override permite configurá-los pelo dev.secret.exs
-        tts_provider:
-          Application.get_env(:gpt_talkerbot, :tts_provider, @defaults.tts_provider),
+        tts_provider: Application.get_env(:gpt_talkerbot, :tts_provider, @defaults.tts_provider),
         elevenlabs_voices:
           normalize_voices(
             Application.get_env(:gpt_talkerbot, :elevenlabs_voices, @defaults.elevenlabs_voices)
@@ -221,6 +220,7 @@ defmodule GptTalkerbot.RuntimeEnvs do
       _ -> :openai
     end
   end
+
   def get_relevance_threshold, do: get(:relevance_threshold)
   def get_always_include_last, do: get(:always_include_last)
   def get_max_context_messages, do: get(:max_context_messages)

@@ -133,13 +133,9 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
     else
       query = extra_query ++ [language: @target_language, page_size: 1, sort_by: "score"]
 
-      response =
       fish_client(key)
       |> Tesla.get("/model", query: query)
       |> handle_result(["items", Access.at(0), "_id"], "fish", extra_query)
-
-      IO.inspect("query: ****#{inspect(query)}**** - response: ****#{inspect(response)}****")
-      response
     end
   end
 
@@ -155,23 +151,6 @@ defmodule GptTalkerbotWeb.Services.VoiceSearch do
     fish_client(key)
     |> Tesla.get("/model", query: query)
     |> extract_fish_name_match(name)
-    |> log_title_search(name, self?)
-  end
-
-  # A busca por nome são duas requisições (conta própria, depois library
-  # pública) e só a falha das duas era logada. Saber em QUAL delas o nome foi
-  # achado é o que distingue "voz própria encontrada" de "casou por
-  # similaridade com uma voz pública qualquer".
-  defp log_title_search({:ok, id}, name, self?) do
-    onde = if self?, do: "conta própria", else: "library pública"
-    Logger.info("VoiceSearch: #{inspect(name)} achado na #{onde} => #{id}")
-    {:ok, id}
-  end
-
-  defp log_title_search(:error, name, self?) do
-    onde = if self?, do: "conta própria", else: "library pública"
-    Logger.info("VoiceSearch: #{inspect(name)} não achado na #{onde}")
-    :error
   end
 
   defp extract_fish_name_match({:ok, %{status: 200, body: body}}, name) do

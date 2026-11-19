@@ -107,14 +107,18 @@ default:21m00Tcm4TlvDq8ikWAM;male_1:pNInz6obpgDQGcFmaJgB;narrador:...
 Voice Library da Fish Audio. A voz `default` cobre o que a busca dinâmica não
 achar.
 
-**Modelo da Fish** — `fish_model` no SSM. O padrão é `s2.1-pro` (US$ 15 por
-milhão de bytes UTF-8). `drama-3` custa US$ 50 pelo mesmo volume, mas é o único
-que entende direção de atuação em frase inteira e em português
+**Modelo da Fish** — `fish_model` no SSM, padrão `drama-3`. É o único que
+entende direção de atuação em frase inteira e em português
 (`[sussurrando, fingindo pena]`), tags prosódicas (`<whisper>`, `<emphasis>`,
 `<soft>`, `<fast>`, `<slow>`, `<stress>`, `<forceful>`) e várias vozes num áudio
-só. Trocar o parâmetro basta: `RuntimeEnvs.fish_drama?/0` ajusta sozinho a
-instrução mandada ao LLM e habilita o caminho de diálogo. Valor inválido não
-quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente.
+só — **sem ele o modo bipolar não existe** e toda cena sai em voz única.
+
+Custa US$ 50 por milhão de bytes UTF-8 contra US$ 15 do `s2.1-pro`. Se o custo
+apertar, o SSM derruba pra lá e o pipeline se adapta sozinho:
+`RuntimeEnvs.fish_drama?/0` e `tts_dialogue?/0` param de separar as falas e a
+instrução mandada ao LLM deixa de ensinar o modo bipolar. Valor inválido não
+quebra a chamada — a Fish cai em `s2.1-pro` silenciosamente, então um typo aqui
+se manifesta como cena em voz única, não como erro.
 
 **Voz por contexto** — o modelo pode pedir uma voz específica com
 `[[ratobo:voice:nome:...]]` (busca por nome na biblioteca do provider) ou

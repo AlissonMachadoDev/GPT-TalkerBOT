@@ -189,11 +189,9 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
     result =
       cond do
         inputs = dialogue_inputs(raw_content, actions) ->
-          Logger.info("MessageHandler: entrega=cena_multivoz falas=#{length(inputs)}")
           send_with_dialogue(reply, inputs, message)
 
         :audio in actions ->
-          Logger.info("MessageHandler: entrega=nota_de_voz actions=#{inspect(actions)}")
           send_with_audio(reply, actions, message)
 
         :gif in actions ->
@@ -215,46 +213,11 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # áudio sai em voz única.
   defp dialogue_inputs(raw_content, actions) do
     cond do
-      not RuntimeEnvs.tts_dialogue?() ->
-        warn_scene_discarded(raw_content)
-        nil
-
-      inputs = bipolar_inputs(raw_content) ->
-        inputs
-
-      inputs = marked_inputs(raw_content) ->
-        Logger.info("MessageHandler: cena pelo marcador por fala (caminho antigo)")
-        inputs
-
-      inputs = implied_inputs(raw_content, actions) ->
-        inputs
-
-      true ->
-        Logger.info("MessageHandler: resposta não é cena (sem elenco e sem 2+ marcadores de voz)")
-        nil
-    end
-  end
-
-  # O modelo escreveu uma cena e ela foi descartada por config: esse aviso
-  # precisa cobrir as TRÊS formas de cena, não só o elenco. Cobrindo só o
-  # elenco, uma resposta com quatro marcadores por fala — cena perfeitamente
-  # montada — era descartada sem deixar rastro nenhum no log.
-  defp warn_scene_discarded(raw_content) do
-    cena =
-      cond do
-        PostActions.cast(raw_content) != [] -> "elenco declarado"
-        length(PostActions.voice_turns(raw_content)) >= 2 -> "marcadores de voz por fala"
-        PostActions.implied_cast(raw_content) != [] -> "roteiro com vários falantes"
-        :else -> nil
-      end
-
-    if cena do
-      Logger.warning(
-        "MessageHandler: resposta traz cena (#{cena}) mas provider=" <>
-          "#{RuntimeEnvs.get_tts_provider()} fish_model=#{RuntimeEnvs.get_fish_model()} " <>
-          "não monta multi-voz; vai sair em voz única. Para montar: tts_provider=elevenlabs, " <>
-          "ou tts_provider=fish com fish_model=drama-3 (confira com /showvariables)"
-      )
+      not RuntimeEnvs.tts_dialogue?() -> nil
+      inputs = bipolar_inputs(raw_content) -> inputs
+      inputs = marked_inputs(raw_content) -> inputs
+      inputs = implied_inputs(raw_content, actions) -> inputs
+      true -> nil
     end
   end
 
@@ -269,11 +232,6 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           nil
 
         cast ->
-          Logger.warning(
-            "MessageHandler: modelo não declarou elenco mas escreveu roteiro; " <>
-              "elenco deduzido das falas = #{inspect(cast)}"
-          )
-
           bipolar_inputs(cast, PostActions.script_turns(raw_content, cast))
       end
     end
@@ -293,23 +251,9 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # Elenco declarado mas menos de duas falas reconhecidas: o modelo não
   # escreveu "Nome: fala" ou escreveu nome que não está no elenco. Era o
   # buraco mais escuro do fluxo — a cena virava texto sem explicação.
-  defp bipolar_inputs(cast, turns) when length(turns) < 2 do
-    Logger.warning(
-      "MessageHandler: modo bipolar abortado — elenco #{inspect(cast)} declarado mas só " <>
-        "#{length(turns)} fala(s) reconhecida(s). O modelo não escreveu 'Nome: fala' em " <>
-        "linha própria, ou usou nome fora do elenco."
-    )
-
-    nil
-  end
+  defp bipolar_inputs(_cast, turns) when length(turns) < 2, do: nil
 
   defp bipolar_inputs(cast, turns) do
-    falantes = turns |> Enum.map(& &1.name) |> Enum.frequencies()
-
-    Logger.info(
-      "MessageHandler: modo bipolar — elenco=#{inspect(cast)} falas=#{inspect(falantes)}"
-    )
-
     voices = resolve_cast(cast)
 
     Enum.map(turns, fn %{name: name, text: text} ->
@@ -334,30 +278,8 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   end
 
   defp resolve_cast(cast) do
-    voices = Map.new(cast, fn name -> {name, resolve_voice({:voice_name, name})} end)
-
-    Logger.info(
-      "MessageHandler: elenco resolvido — " <>
-        Enum.map_join(voices, " | ", fn {nome, voz} -> "#{nome} => #{voz}" end)
-    )
-
-    warn_if_monologue(cast, voices)
-    voices
+    Map.new(cast, fn name -> {name, resolve_voice({:voice_name, name})} end)
   end
-
-  # Personagem que a biblioteca de vozes não tem cai na default. Com o elenco
-  # inteiro caindo nela, a cena sai como monólogo — tecnicamente um sucesso,
-  # mas não é o que foi pedido, e sem esse aviso o sintoma só aparece no áudio.
-  defp warn_if_monologue([_, _ | _] = cast, voices) do
-    if voices |> Map.values() |> Enum.uniq() |> length() == 1 do
-      Logger.warning(
-        "MessageHandler: nenhuma voz do elenco #{inspect(cast)} foi encontrada; " <>
-          "todas caíram na default e a cena vai sair em monólogo"
-      )
-    end
-  end
-
-  defp warn_if_monologue(_cast, _voices), do: :ok
 
   # Normaliza o resultado do envio: só conta como entregue o que o
   # Telegram aceitou — é o que decide se a resposta entra no histórico
@@ -474,31 +396,15 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           _ -> send_message(PostActions.strip_audio_tags(reply), message)
         end
 
-      {:error, reason} ->
-        Logger.warning(
-          "MessageHandler: síntese da cena falhou (#{inspect(reason)}); caindo pro texto"
-        )
-
+      {:error, _} ->
         send_message(PostActions.strip_audio_tags(reply), message)
     end
   end
 
   defp resolve_voice(action) do
     case VoiceSearch.find_voice(action) do
-      {:ok, voice_id} ->
-        voice_id
-
-      :error ->
-        # Cair na default era silencioso, então duas vozes não encontradas
-        # viravam monólogo sem nenhum rastro de qual nome falhou
-        default = default_voice()
-
-        Logger.warning(
-          "MessageHandler: #{inspect(action)} sem voz na biblioteca; " <>
-            "usando a default #{inspect(default)}"
-        )
-
-        default
+      {:ok, voice_id} -> voice_id
+      :error -> default_voice()
     end
   end
 

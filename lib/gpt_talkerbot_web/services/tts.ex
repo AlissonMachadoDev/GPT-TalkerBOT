@@ -72,7 +72,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
       "response_format" => @openai_format
     }
 
-    audio_or_error(Tesla.post(client, "/audio/speech", body), "openai")
+    audio_or_error(Tesla.post(client, "/audio/speech", body))
   end
 
   defp openai_client(api_key) do
@@ -105,7 +105,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
         "voice_settings" => RuntimeEnvs.get_elevenlabs_voice_settings()
       }
 
-      audio_or_error(Tesla.post(client, url, body), "elevenlabs")
+      audio_or_error(Tesla.post(client, url, body))
     end
   end
 
@@ -139,22 +139,12 @@ defmodule GptTalkerbotWeb.Services.TTS do
   def synthesize_dialogue(turns) when is_list(turns) and turns != [] do
     cond do
       not RuntimeEnvs.tts_dialogue?() ->
-        Logger.warning(
-          "TTS: cena de #{length(turns)} falas recusada — provider=" <>
-            "#{RuntimeEnvs.get_tts_provider()} fish_model=#{RuntimeEnvs.get_fish_model()} " <>
-            "não monta multi-voz (precisa elevenlabs, ou fish no drama-3)"
-        )
-
         {:error, :unsupported}
 
       # Voz vazia é o que sobra quando a busca não acha nada e nem a "default"
       # está configurada. A ElevenLabs recusaria o input e a Fish montaria um
       # reference_id furado — falhar aqui dá um erro legível no log.
       Enum.any?(turns, &(&1.voice_id in [nil, ""])) ->
-        Logger.warning(
-          "TTS: cena recusada — fala sem voz resolvida e sem voz default configurada"
-        )
-
         {:error, :no_voice}
 
       true ->
@@ -181,15 +171,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
   """
   def trim_to_budget(turns, budget) do
     {kept, _used} = Enum.reduce_while(turns, {[], 0}, &take_while_fits(&1, &2, budget))
-    kept = Enum.reverse(kept)
-
-    if length(kept) < length(turns) do
-      Logger.warning(
-        "TTS: cena cortada de #{length(turns)} pra #{length(kept)} falas (orçamento #{budget} chars)"
-      )
-    end
-
-    kept
+    Enum.reverse(kept)
   end
 
   defp take_while_fits(turn, {acc, used}, budget) do
@@ -218,26 +200,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
       url = "/text-to-dialogue?output_format=#{@elevenlabs_output_format}"
       body = %{"inputs" => inputs, "model_id" => RuntimeEnvs.get_elevenlabs_model()}
 
-      log_dialogue_request("elevenlabs/dialogue", turns, RuntimeEnvs.get_elevenlabs_model())
-      audio_or_error(Tesla.post(client, url, body), "elevenlabs/dialogue")
-    end
-  end
-
-  # O número de vozes DISTINTAS é o que diz se a cena vai sair como cena: com
-  # 1 voz e 4 falas o áudio é monólogo, e esse era o sintoma invisível no log.
-  defp log_dialogue_request(label, turns, model) do
-    vozes = turns |> Enum.map(& &1.voice_id) |> Enum.uniq()
-    chars = turns |> Enum.map(&String.length(&1.text)) |> Enum.sum()
-
-    Logger.info(
-      "TTS[#{label}]: modelo=#{model} falas=#{length(turns)} " <>
-        "vozes_distintas=#{length(vozes)} chars=#{chars} vozes=#{inspect(vozes)}"
-    )
-
-    if length(vozes) == 1 and length(turns) > 1 do
-      Logger.warning(
-        "TTS[#{label}]: #{length(turns)} falas com UMA voz só — o áudio vai sair em monólogo"
-      )
+      audio_or_error(Tesla.post(client, url, body))
     end
   end
 
@@ -259,7 +222,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
         "format" => @fish_output_format
       }
 
-      audio_or_error(Tesla.post(client, "/tts", body), "fish")
+      audio_or_error(Tesla.post(client, "/tts", body))
     end
   end
 
@@ -269,13 +232,7 @@ defmodule GptTalkerbotWeb.Services.TTS do
     if key == "" do
       {:error, :no_api_key}
     else
-      body = build_fish_dialogue_body(turns)
-      log_dialogue_request("fish/dialogue", turns, RuntimeEnvs.get_fish_model())
-      # O texto vai inteiro no log porque é onde se vê se os marcadores
-      # <|speaker:N|> saíram alternando ou se todos viraram speaker:0
-      Logger.info("TTS[fish/dialogue]: text=#{inspect(body["text"], printable_limit: 600)}")
-
-      audio_or_error(Tesla.post(fish_client(key), "/tts", body), "fish/dialogue")
+      audio_or_error(Tesla.post(fish_client(key), "/tts", build_fish_dialogue_body(turns)))
     end
   end
 
@@ -316,34 +273,9 @@ defmodule GptTalkerbotWeb.Services.TTS do
   end
 
   # A resposta 200 vem com content-type de áudio: o JSON middleware não a
-  # decodifica e o corpo chega como binário cru. `label` diz qual chamada foi,
-  # porque são cinco (openai, elevenlabs, elevenlabs/dialogue, fish,
-  # fish/dialogue) e no log elas eram indistinguíveis.
-  defp audio_or_error({:ok, %{status: 200, body: audio}}, label)
-       when is_binary(audio) and audio != "" do
-    Logger.info("TTS[#{label}]: 200, #{byte_size(audio)} bytes de áudio")
-    {:ok, audio}
-  end
+  # decodifica e o corpo chega como binário cru
+  defp audio_or_error({:ok, %{status: 200, body: audio}}) when is_binary(audio) and audio != "",
+    do: {:ok, audio}
 
-  # O corpo do erro é onde a API explica o que recusou — voz inexistente,
-  # modelo que não aceita array em reference_id, texto grande demais. Sem
-  # logá-lo todo problema vira o mesmo :unavailable opaco.
-  defp audio_or_error({:ok, %{status: status, body: body}}, label) do
-    Logger.warning("TTS[#{label}]: HTTP #{status} — #{describe_body(body)}")
-    {:error, {:http, status}}
-  end
-
-  defp audio_or_error({:error, reason}, label) do
-    Logger.warning("TTS[#{label}]: falha de transporte — #{inspect(reason)}")
-    {:error, :unavailable}
-  end
-
-  defp audio_or_error(other, label) do
-    Logger.warning("TTS[#{label}]: resposta inesperada — #{inspect(other, limit: 5)}")
-    {:error, :unavailable}
-  end
-
-  # inspect/2 em vez de String.slice porque o corpo do erro pode vir como mapa
-  # JSON decodificado ou como binário não-UTF8, e slice quebraria no segundo
-  defp describe_body(body), do: inspect(body, limit: 20, printable_limit: 400)
+  defp audio_or_error(_), do: {:error, :unavailable}
 end
