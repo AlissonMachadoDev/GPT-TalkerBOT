@@ -473,6 +473,46 @@ defmodule GptTalkerbot.PostActionsTest do
     end
   end
 
+  describe "cena dirigida de ponta a ponta" do
+    @cena """
+    [[ratobo:bipolar:Silvio Santos, Faustão]]
+    Silvio Santos: [doce, falsamente acolhedor] Olha só quem apareceu no meu <emphasis>auditório</emphasis>.
+    Faustão: [explodindo, atropelando as palavras] Ô loco meu, tu tá <forceful>maluco</forceful>?
+    Silvio Santos: [cortando seco, voz de gelo] Para tudo.
+    """
+
+    test "a direção de cada fala chega inteira ao sintetizador" do
+      cast = PostActions.cast(@cena)
+
+      falas =
+        @cena
+        |> PostActions.script_turns(cast)
+        |> Enum.map(&PostActions.speech_text(&1.text))
+
+      assert falas == [
+               "[doce, falsamente acolhedor] Olha só quem apareceu no meu <emphasis>auditório</emphasis>.",
+               "[explodindo, atropelando as palavras] Ô loco meu, tu tá <forceful>maluco</forceful>?",
+               "[cortando seco, voz de gelo] Para tudo."
+             ]
+    end
+
+    test "nenhuma direção vaza pra legenda que o usuário lê" do
+      legenda = @cena |> PostActions.strip() |> PostActions.strip_audio_tags()
+
+      assert legenda ==
+               "Silvio Santos: Olha só quem apareceu no meu auditório.\n" <>
+                 "Faustão: Ô loco meu, tu tá maluco?\n" <>
+                 "Silvio Santos: Para tudo."
+    end
+
+    test "direção longa com vírgula não impede o reconhecimento do falante" do
+      cast = PostActions.cast(@cena)
+      falantes = @cena |> PostActions.script_turns(cast) |> Enum.map(& &1.name)
+
+      assert falantes == ["Silvio Santos", "Faustão", "Silvio Santos"]
+    end
+  end
+
   describe "implied_cast/1" do
     test "recupera o elenco quando o modelo erra o marcador mas escreve o roteiro" do
       texto =

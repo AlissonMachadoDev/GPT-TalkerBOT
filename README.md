@@ -177,6 +177,26 @@ opcionais: tanto `Chico e Felipe:` quanto `(Chico e Felipe):` casam.
 O fallback de texto é o próprio roteiro, que já se lê sozinho — se o TTS cair,
 a cena vira mensagem normal com cada fala atribuída.
 
+**Performance vocal na cena** — dentro do modo bipolar a regra de parcimônia das
+outras seções se inverte: a instrução pede direção em **toda** fala, mais as
+tags prosódicas nas palavras de impacto, e exige que cada personagem tenha um
+jeito próprio e constante de falar:
+
+```
+Silvio Santos: [doce, falsamente acolhedor] Olha só quem apareceu no meu <emphasis>auditório</emphasis>.
+Faustão: [explodindo, atropelando as palavras] Ô loco meu, tu tá <forceful>maluco</forceful>?
+```
+
+Além do efeito cômico, isso mitiga um problema do próprio drama-3: em cena longa
+as vozes tendem a convergir para uma só (ver
+[fish-speech#1358](https://github.com/fishaudio/fish-speech/issues/1358),
+reproduzido também na API hospedada). Direção contrastante por personagem
+mantém as identidades distinguíveis no ouvido. Não é cura — é paliativo.
+
+O vocabulário acompanha o modelo ativo: frase em português no `drama-3`, audio
+tag curta em inglês no `eleven_v3`. Pedir frase onde o modelo só entende
+etiqueta fez ele ler a direção em voz alta.
+
 **Teto de tamanho da cena** — a ElevenLabs documenta no máximo 2.000 caracteres
 somando todos os `inputs[].text` do `text-to-dialogue`; acima disso a resposta
 pode truncar ou dar erro de validação. A Fish não publica teto no `/v1/tts`, mas
