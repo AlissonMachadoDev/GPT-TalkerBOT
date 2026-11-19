@@ -188,11 +188,22 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, raw_content, message) do
     result =
       cond do
-        inputs = dialogue_inputs(raw_content) -> send_with_dialogue(reply, inputs, message)
-        :audio in actions -> send_with_audio(reply, actions, message)
-        :gif in actions -> send_with_gif(reply, message)
-        message.chat_type == "private" -> send_rich_reply(reply, message)
-        true -> send_message(reply, message)
+        inputs = dialogue_inputs(raw_content) ->
+          Logger.info("MessageHandler: entrega=cena_multivoz falas=#{length(inputs)}")
+          send_with_dialogue(reply, inputs, message)
+
+        :audio in actions ->
+          Logger.info("MessageHandler: entrega=nota_de_voz actions=#{inspect(actions)}")
+          send_with_audio(reply, actions, message)
+
+        :gif in actions ->
+          send_with_gif(reply, message)
+
+        message.chat_type == "private" ->
+          send_rich_reply(reply, message)
+
+        true ->
+          send_message(reply, message)
       end
 
     delivered(result)
@@ -203,8 +214,30 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # RuntimeEnvs.tts_dialogue?); onde não dá, as falas nem são separadas e o
   # áudio sai em voz única.
   defp dialogue_inputs(raw_content) do
-    if RuntimeEnvs.tts_dialogue?() do
-      bipolar_inputs(raw_content) || marked_inputs(raw_content)
+    cond do
+      not RuntimeEnvs.tts_dialogue?() ->
+        # Sem esse aviso, elenco declarado num provider que não monta cena
+        # simplesmente não acontecia, e o log ficava mudo sobre o motivo
+        if PostActions.cast(raw_content) != [] do
+          Logger.warning(
+            "MessageHandler: resposta traz elenco mas provider=" <>
+              "#{RuntimeEnvs.get_tts_provider()} fish_model=#{RuntimeEnvs.get_fish_model()} " <>
+              "não monta cena; vai sair em voz única ou texto"
+          )
+        end
+
+        nil
+
+      inputs = bipolar_inputs(raw_content) ->
+        inputs
+
+      inputs = marked_inputs(raw_content) ->
+        Logger.info("MessageHandler: cena pelo marcador por fala (caminho antigo)")
+        inputs
+
+      true ->
+        Logger.info("MessageHandler: resposta não é cena (sem elenco e sem 2+ marcadores de voz)")
+        nil
     end
   end
 
@@ -213,16 +246,37 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # falas entre dois personagens isso é a diferença entre 2 e 6 buscas (e cada
   # busca por nome gasta até duas requisições, ver VoiceSearch).
   defp bipolar_inputs(raw_content) do
-    with cast when cast != [] <- PostActions.cast(raw_content),
-         [_, _ | _] = turns <- PostActions.script_turns(raw_content, cast) do
-      voices = resolve_cast(cast)
-
-      Enum.map(turns, fn %{name: name, text: text} ->
-        %{text: PostActions.speech_text(text), voice_id: Map.fetch!(voices, name)}
-      end)
-    else
-      _ -> nil
+    case PostActions.cast(raw_content) do
+      [] -> nil
+      cast -> bipolar_inputs(cast, PostActions.script_turns(raw_content, cast))
     end
+  end
+
+  # Elenco declarado mas menos de duas falas reconhecidas: o modelo não
+  # escreveu "Nome: fala" ou escreveu nome que não está no elenco. Era o
+  # buraco mais escuro do fluxo — a cena virava texto sem explicação.
+  defp bipolar_inputs(cast, turns) when length(turns) < 2 do
+    Logger.warning(
+      "MessageHandler: modo bipolar abortado — elenco #{inspect(cast)} declarado mas só " <>
+        "#{length(turns)} fala(s) reconhecida(s). O modelo não escreveu 'Nome: fala' em " <>
+        "linha própria, ou usou nome fora do elenco."
+    )
+
+    nil
+  end
+
+  defp bipolar_inputs(cast, turns) do
+    falantes = turns |> Enum.map(& &1.name) |> Enum.frequencies()
+
+    Logger.info(
+      "MessageHandler: modo bipolar — elenco=#{inspect(cast)} falas=#{inspect(falantes)}"
+    )
+
+    voices = resolve_cast(cast)
+
+    Enum.map(turns, fn %{name: name, text: text} ->
+      %{text: PostActions.speech_text(text), voice_id: Map.fetch!(voices, name)}
+    end)
   end
 
   # Marcador por fala: continua sendo o caminho de cena com voz por ESTILO,
@@ -243,6 +297,12 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
 
   defp resolve_cast(cast) do
     voices = Map.new(cast, fn name -> {name, resolve_voice({:voice_name, name})} end)
+
+    Logger.info(
+      "MessageHandler: elenco resolvido — " <>
+        Enum.map_join(voices, " | ", fn {nome, voz} -> "#{nome} => #{voz}" end)
+    )
+
     warn_if_monologue(cast, voices)
     voices
   end
@@ -376,15 +436,31 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
           _ -> send_message(PostActions.strip_audio_tags(reply), message)
         end
 
-      {:error, _} ->
+      {:error, reason} ->
+        Logger.warning(
+          "MessageHandler: síntese da cena falhou (#{inspect(reason)}); caindo pro texto"
+        )
+
         send_message(PostActions.strip_audio_tags(reply), message)
     end
   end
 
   defp resolve_voice(action) do
     case VoiceSearch.find_voice(action) do
-      {:ok, voice_id} -> voice_id
-      :error -> default_voice()
+      {:ok, voice_id} ->
+        voice_id
+
+      :error ->
+        # Cair na default era silencioso, então duas vozes não encontradas
+        # viravam monólogo sem nenhum rastro de qual nome falhou
+        default = default_voice()
+
+        Logger.warning(
+          "MessageHandler: #{inspect(action)} sem voz na biblioteca; " <>
+            "usando a default #{inspect(default)}"
+        )
+
+        default
     end
   end
 
