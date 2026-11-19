@@ -216,16 +216,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp dialogue_inputs(raw_content, actions) do
     cond do
       not RuntimeEnvs.tts_dialogue?() ->
-        # Sem esse aviso, elenco declarado num provider que não monta cena
-        # simplesmente não acontecia, e o log ficava mudo sobre o motivo
-        if PostActions.cast(raw_content) != [] do
-          Logger.warning(
-            "MessageHandler: resposta traz elenco mas provider=" <>
-              "#{RuntimeEnvs.get_tts_provider()} fish_model=#{RuntimeEnvs.get_fish_model()} " <>
-              "não monta cena; vai sair em voz única ou texto"
-          )
-        end
-
+        warn_scene_discarded(raw_content)
         nil
 
       inputs = bipolar_inputs(raw_content) ->
@@ -241,6 +232,29 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
       true ->
         Logger.info("MessageHandler: resposta não é cena (sem elenco e sem 2+ marcadores de voz)")
         nil
+    end
+  end
+
+  # O modelo escreveu uma cena e ela foi descartada por config: esse aviso
+  # precisa cobrir as TRÊS formas de cena, não só o elenco. Cobrindo só o
+  # elenco, uma resposta com quatro marcadores por fala — cena perfeitamente
+  # montada — era descartada sem deixar rastro nenhum no log.
+  defp warn_scene_discarded(raw_content) do
+    cena =
+      cond do
+        PostActions.cast(raw_content) != [] -> "elenco declarado"
+        length(PostActions.voice_turns(raw_content)) >= 2 -> "marcadores de voz por fala"
+        PostActions.implied_cast(raw_content) != [] -> "roteiro com vários falantes"
+        :else -> nil
+      end
+
+    if cena do
+      Logger.warning(
+        "MessageHandler: resposta traz cena (#{cena}) mas provider=" <>
+          "#{RuntimeEnvs.get_tts_provider()} fish_model=#{RuntimeEnvs.get_fish_model()} " <>
+          "não monta multi-voz; vai sair em voz única. Para montar: tts_provider=elevenlabs, " <>
+          "ou tts_provider=fish com fish_model=drama-3 (confira com /showvariables)"
+      )
     end
   end
 
