@@ -126,15 +126,25 @@ se manifesta como cena em voz única, não como erro.
 `Services.VoiceSearch`. Busca sem resultado cai na voz `default` do provider
 ativo, sem derrubar a síntese.
 
-**Diálogo multi-voz** — várias vozes num áudio só. Funciona na ElevenLabs
-(`text-to-dialogue`, até 10 vozes) e na Fish com `drama-3` (`reference_id` em
-array + marcadores `<|speaker:N|>`). Nos demais o pipeline nem separa as falas:
-o áudio sai inteiro na voz da primeira — e a instrução mandada ao LLM diz isso,
-pra ele não contar com o que não existe.
+**Diálogo multi-voz** — várias vozes num áudio só, sempre dentro do modo
+bipolar (ver abaixo). Funciona na ElevenLabs (`text-to-dialogue`, até 10 vozes)
+e na Fish com `drama-3` (`reference_id` em array + marcadores `<|speaker:N|>`).
+Nos demais o pipeline nem separa as falas: o áudio sai inteiro na voz da
+primeira — e a instrução mandada ao LLM diz isso, pra ele não contar com o que
+não existe.
 
-**Modo bipolar** — o jeito curto de montar uma cena. O usuário pede no chat
-("responde em modo bipolar com as vozes de Silvio Santos e Faustão") e o modelo
-declara o elenco uma vez, escrevendo as falas como roteiro:
+**Modo bipolar** — o jeito curto de montar uma cena. É um **comando explícito**:
+só acionado quando a mensagem contém as palavras "modo bipolar"
+(`PostActions.bipolar_requested?/1`). Citar duas pessoas, pedir uma discussão ou
+descrever uma cena não aciona — aí a resposta sai como áudio de voz única.
+
+A trava é no pipeline, não só no prompt: sem a expressão escrita, nenhuma
+resposta vira cena, por mais que o modelo declare elenco ou repita marcador de
+voz por fala. Isso evita que o bot gaste o endpoint de diálogo (e as buscas de
+voz) sempre que alguém mencionar dois nomes.
+
+Pedido o modo, o modelo declara o elenco uma vez e escreve as falas como
+roteiro:
 
 ```
 [[ratobo:bipolar:Silvio Santos, Faustão]]

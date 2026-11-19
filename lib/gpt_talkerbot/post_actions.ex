@@ -41,6 +41,11 @@ defmodule GptTalkerbot.PostActions do
   # requisições em cada busca por nome).
   @bipolar_directive ~r/\[\[\s*ratobo:\s*bipolar:\s*([^\]]{1,200}?)\s*\]\]/iu
 
+  # Pedido explícito do modo na mensagem do usuário (ver bipolar_requested?/1).
+  # Aceita hífen e espaço extra porque é o que varia na digitação, mas não
+  # aceita sinônimo: o modo é um comando, não uma intenção a ser adivinhada.
+  @bipolar_request ~r/\bmodo[\s-]+bipolar\b/iu
+
   # O limite de 200 acompanha o do elenco acima; com {0,60} (que bastava pros
   # marcadores antigos) um [[ratobo:bipolar:...]] de quatro nomes escapava da
   # limpeza e aparecia escrito na resposta.
@@ -132,28 +137,33 @@ defmodule GptTalkerbot.PostActions do
                        "nada.\nUse qualquer um dos dois raramente, só quando a voz padrão " <>
                        "destoaria claramente do que foi pedido."
 
-  @dialogue_instruction "\n\nPra DIÁLOGO com mais de uma voz no mesmo áudio (cena com dois " <>
-                          "personagens, por exemplo), repita um marcador " <>
+  @dialogue_instruction "\n\nDentro do MODO BIPOLAR (e só dentro dele), existe uma forma " <>
+                          "alternativa de marcar as falas: repetir um marcador " <>
                           "[[ratobo:voice:nome:...]] ou [[ratobo:voice:estilo:...]] no início " <>
-                          "de CADA fala, alternando conforme quem fala — inclusive a primeira " <>
-                          "fala precisa vir com marcador, senão ela não entra no áudio. " <>
-                          "Exemplo:\n" <>
+                          "de CADA fala, alternando conforme quem fala. Serve quando os " <>
+                          "personagens não têm nome e sim estilo (\"um velho e uma moça\"), " <>
+                          "que o elenco não cobre. Exemplo:\n" <>
                           "[[ratobo:voice:nome:Fulano]] Fala do Fulano aqui.\n" <>
                           "[[ratobo:voice:estilo:feminina agressiva]] Resposta da segunda voz " <>
-                          "aqui.\n"
+                          "aqui.\n" <>
+                          "Fora do modo bipolar NÃO repita esses marcadores: um só, no fim da " <>
+                          "resposta, troca a voz do áudio inteiro.\n"
 
   @dialogue_supported "O provedor de voz ativo monta isso num áudio só, com as vozes " <>
                         "alternando de verdade."
 
-  @bipolar_instruction "\n\nREGRA QUE VEM ANTES DAS OUTRAS DE VOZ: se o pedido disser MODO " <>
-                         "BIPOLAR, ou citar mais de um personagem falando, ou descrever uma " <>
-                         "cena entre duas ou mais pessoas, use OBRIGATORIAMENTE o elenco " <>
-                         "abaixo e NÃO use [[ratobo:audio]] nem [[ratobo:voice:nome:...]] nem " <>
-                         "[[ratobo:voice:estilo:...]] — esses três são só pra áudio de UMA voz " <>
-                         "e desperdiçariam a cena, jogando todas as falas numa voz só.\n" <>
-                         "Exemplos de pedido que caem AQUI: \"modo bipolar com as vozes de " <>
-                         "fulano e beltrano\", \"faz o fulano e o beltrano discutindo\", \"uma " <>
-                         "briga entre X e Y\".\n" <>
+  @bipolar_instruction "\n\nMODO BIPOLAR — só quando a mensagem disser essas duas palavras, " <>
+                         "\"modo bipolar\", com todas as letras. Citar duas pessoas, pedir uma " <>
+                         "discussão ou descrever uma cena NÃO aciona o modo: sem a expressão " <>
+                         "escrita, a resposta é áudio de uma voz só, pelos marcadores de " <>
+                         "sempre. Pedido como \"faz o fulano e o beltrano discutindo\" não é " <>
+                         "modo bipolar; \"responde em modo bipolar com as vozes de fulano e " <>
+                         "beltrano\" é.\n" <>
+                         "Quando ele for pedido de verdade, essa regra vem antes das outras de " <>
+                         "voz: use o elenco e NÃO use [[ratobo:audio]] nem " <>
+                         "[[ratobo:voice:nome:...]] nem [[ratobo:voice:estilo:...]] — esses " <>
+                         "três são de áudio de UMA voz e jogariam todas as falas numa voz " <>
+                         "só.\n" <>
                          "Monte a cena assim:\n" <>
                          "1. Declare o elenco UMA vez, em uma linha própria, com os nomes " <>
                          "separados por vírgula: [[ratobo:bipolar:Silvio Santos, Faustão]]. " <>
@@ -247,6 +257,19 @@ defmodule GptTalkerbot.PostActions do
     |> String.split(~r/[,\s]+/, trim: true)
     |> Enum.filter(&(&1 in @style_words))
   end
+
+  @doc """
+  Se a mensagem do usuário pede o modo bipolar com todas as letras.
+
+  O acionamento é a expressão escrita, não a inferência: citar duas pessoas ou
+  descrever uma discussão não basta. A instrução diz isso ao modelo, mas quem
+  garante é esta função — o pipeline só monta cena multi-voz quando ela passa,
+  então um modelo que resolva inventar elenco por conta própria não transforma
+  um pedido comum em áudio de várias vozes.
+  """
+  def bipolar_requested?(nil), do: false
+
+  def bipolar_requested?(text), do: Regex.match?(@bipolar_request, text)
 
   @doc """
   Elenco do modo bipolar: os nomes declarados em [[ratobo:bipolar:A, B, C]],

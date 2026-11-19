@@ -188,7 +188,7 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   defp send_reply(reply, actions, raw_content, message) do
     result =
       cond do
-        inputs = dialogue_inputs(raw_content, actions) ->
+        inputs = dialogue_inputs(raw_content, actions, message) ->
           send_with_dialogue(reply, inputs, message)
 
         :audio in actions ->
@@ -211,8 +211,12 @@ defmodule GptTalkerbot.Telegram.Handlers.MessageHandler do
   # é cena. Diálogo multi-voz depende do provider ativo (ver
   # RuntimeEnvs.tts_dialogue?); onde não dá, as falas nem são separadas e o
   # áudio sai em voz única.
-  defp dialogue_inputs(raw_content, actions) do
+  defp dialogue_inputs(raw_content, actions, %Message{text: pedido}) do
     cond do
+      # O modo é um comando explícito: sem "modo bipolar" escrito na mensagem,
+      # nenhuma resposta vira cena multi-voz — nem com elenco declarado, nem
+      # com marcador de voz repetido por fala. Citar dois nomes não aciona.
+      not PostActions.bipolar_requested?(pedido) -> nil
       not RuntimeEnvs.tts_dialogue?() -> nil
       inputs = bipolar_inputs(raw_content) -> inputs
       inputs = marked_inputs(raw_content) -> inputs

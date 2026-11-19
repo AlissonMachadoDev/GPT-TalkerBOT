@@ -194,6 +194,43 @@ defmodule GptTalkerbot.PostActionsTest do
     end
   end
 
+  describe "bipolar_requested?/1" do
+    test "aciona com a expressão escrita" do
+      assert PostActions.bipolar_requested?(
+               "ratobo grava um audio em modo bipolar da Bea e da Patricia"
+             )
+    end
+
+    test "aceita caixa e hífen" do
+      assert PostActions.bipolar_requested?("MODO BIPOLAR agora")
+      assert PostActions.bipolar_requested?("faz em modo-bipolar")
+      assert PostActions.bipolar_requested?("modo   bipolar")
+    end
+
+    test "citar dois nomes NÃO aciona" do
+      refute PostActions.bipolar_requested?("faz a Bea do Bras e a Patricia Poeta brigando")
+    end
+
+    test "descrever uma cena NÃO aciona" do
+      refute PostActions.bipolar_requested?("uma discussão entre o Faustão e o Silvio Santos")
+    end
+
+    test "sinônimo NÃO aciona — o modo é comando, não intenção" do
+      refute PostActions.bipolar_requested?("responde bipolar")
+      refute PostActions.bipolar_requested?("modo esquizofrênico com duas vozes")
+    end
+
+    test "palavra colada não conta" do
+      refute PostActions.bipolar_requested?("modobipolar")
+      refute PostActions.bipolar_requested?("automodo bipolaridade")
+    end
+
+    test "nil e vazio não acionam" do
+      refute PostActions.bipolar_requested?(nil)
+      refute PostActions.bipolar_requested?("")
+    end
+  end
+
   describe "cast/1" do
     test "separa os nomes declarados no marcador" do
       assert PostActions.cast("[[ratobo:bipolar:Silvio Santos, Faustão]]") ==
